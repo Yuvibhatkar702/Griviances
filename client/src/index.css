@@ -49,7 +49,11 @@ body {
 
 /* Form input styles */
 input, select, textarea {
-  @apply w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
+  @apply px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
+}
+
+input:not([class*='flex']), select:not([class*='flex']), textarea:not([class*='flex']) {
+  @apply w-full;
 }
 
 input:disabled, select:disabled, textarea:disabled {

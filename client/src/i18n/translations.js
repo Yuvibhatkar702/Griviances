@@ -190,6 +190,18 @@ const resources = {
       tracking_instruction: 'You received your complaint ID via WhatsApp after submission',
       submitted_on: 'Submitted On',
       
+      // QR Code
+      qr: {
+        scan_code: 'Scan QR Code',
+        scan_to_track: 'Scan to track your complaint',
+        upload_image: 'Upload Image',
+        download: 'Download QR Code',
+        upload_failed: 'Failed to scan QR code from image',
+        instruction: 'Scan a QR code or upload an image containing one',
+        point_camera: 'Point your camera at the QR code',
+      },
+      error_camera_access: 'Unable to access camera. Please check permissions.',
+      
       // Categories
       categories: {
         roads: 'Roads & Potholes',
@@ -323,6 +335,18 @@ const resources = {
       track_complaint: 'शिकायत ट्रैक करें',
       enter_complaint_id: 'शिकायत आईडी दर्ज करें',
       status_timeline: 'स्थिति टाइमलाइन',
+      
+      // QR Code
+      qr: {
+        scan_code: 'QR कोड स्कैन करें',
+        scan_to_track: 'अपनी शिकायत को ट्रैक करने के लिए स्कैन करें',
+        upload_image: 'छवि अपलोड करें',
+        download: 'QR कोड डाउनलोड करें',
+        upload_failed: 'छवि से QR कोड स्कैन करने में विफल',
+        instruction: 'एक QR कोड स्कैन करें या एक युक्त छवि अपलोड करें',
+        point_camera: 'अपना कैमरा QR कोड की ओर इशारा करें',
+      },
+      error_camera_access: 'कैमरे एक्सेस करने में असमर्थ। कृपया अनुमतियाँ जांचें।',
       
       // Categories
       categories: {

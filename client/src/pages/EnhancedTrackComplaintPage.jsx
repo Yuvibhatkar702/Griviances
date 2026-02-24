@@ -22,6 +22,7 @@ import { complaintApi } from '../services/api';
 import { useToastStore } from '../store';
 import LanguageSelector from '../components/LanguageSelector';
 import StatusBadge from '../components/StatusBadge';
+import QRCodeScanner from '../components/QRCodeScanner';
 
 // Status Timeline Component
 function StatusTimeline({ history, currentStatus }) {
@@ -310,6 +311,7 @@ export default function EnhancedTrackComplaintPage() {
   const [complaint, setComplaint] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showScanner, setShowScanner] = useState(false);
 
   useEffect(() => {
     if (urlComplaintId) {
@@ -354,6 +356,17 @@ export default function EnhancedTrackComplaintPage() {
       fetchComplaint(complaint.complaintId);
       addToast(t('refreshed'), 'success');
     }
+  };
+
+  const handleQRScan = (scannedId) => {
+    if (!scannedId) return;
+    const id = scannedId.trim().toUpperCase();
+    if (!id) return;
+
+    setSearchId(id);
+    setShowScanner(false);
+    navigate(`/track/${id}`);
+    fetchComplaint(id);
   };
 
   return (
@@ -411,6 +424,14 @@ export default function EnhancedTrackComplaintPage() {
                 )}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowScanner(true)}
+              className="mt-3 w-full border border-dashed border-primary-300 text-primary-700 bg-primary-50/40 hover:bg-primary-50 rounded-xl px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+            >
+              <DocumentDuplicateIcon className="w-4 h-4" />
+              {t('qr.scan_code', 'Scan QR code instead')}
+            </button>
           </div>
         </motion.form>
 
@@ -549,6 +570,18 @@ export default function EnhancedTrackComplaintPage() {
           </motion.div>
         )}
       </main>
+      <AnimatePresence>
+        {showScanner && (
+          <QRCodeScanner
+            onScan={handleQRScan}
+            onClose={() => setShowScanner(false)}
+            onError={(err) => {
+              console.error('QR scan error:', err);
+              setError(t('error_generic'));
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { AnimatePresence } from 'framer-motion';
 import StatusBadge from '../components/StatusBadge';
 import { LanguageSelectorCompact } from '../components/LanguageSelector';
+import QRCodeScanner from '../components/QRCodeScanner';
 import { complaintApi } from '../services/api';
 
 export default function TrackComplaintPage() {
@@ -14,6 +16,7 @@ export default function TrackComplaintPage() {
   const [complaint, setComplaint] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showScanner, setShowScanner] = useState(false);
 
   const handleTrack = async (e) => {
     e?.preventDefault();
@@ -43,8 +46,18 @@ export default function TrackComplaintPage() {
     }
   };
 
+  const handleQRScan = (scannedId) => {
+    setComplaintId(scannedId);
+    setShowScanner(false);
+    // Auto-track after setting the ID
+    setTimeout(() => {
+      const event = new Event('submit', { bubbles: true });
+      document.querySelector('form')?.dispatchEvent(event);
+    }, 0);
+  };
+
   // Auto-track if ID is in URL
-  useState(() => {
+  useEffect(() => {
     if (initialId) {
       handleTrack();
     }
@@ -73,14 +86,19 @@ export default function TrackComplaintPage() {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {t('track_enter_id')}
           </label>
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={complaintId}
-              onChange={(e) => setComplaintId(e.target.value.toUpperCase())}
-              placeholder={t('track_placeholder')}
-              className="flex-1 font-mono text-lg"
-            />
+          <div className="flex gap-3 mb-3">
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={complaintId}
+                onChange={(e) => setComplaintId(e.target.value.toUpperCase())}
+                placeholder={t('track_placeholder')}
+                className="w-full pl-10 font-mono text-lg"
+              />
+            </div>
             <button
               type="submit"
               disabled={isLoading || !complaintId.trim()}
@@ -89,15 +107,22 @@ export default function TrackComplaintPage() {
               {isLoading ? (
                 <div className="spinner w-5 h-5" />
               ) : (
-                <>
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  {t('track_button')}
-                </>
+                t('track_button')
               )}
             </button>
           </div>
+          
+          {/* QR Scanner Button */}
+          <button
+            type="button"
+            onClick={() => setShowScanner(true)}
+            className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors border border-gray-300"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 11h2V9H3v2zm0-4h2V5h2V3H3v4zm4 12h2v-2H7v2zM3 15h2v-2H3v2zm0 4h4v-2H5v-2H3v4zm16 0h2v-4h-2v2h-2v2h4zm0-4h2v-2h-2v2zm0-8h2V3h-4v2h2v4zm-4 12h2v-2h-2v2zM11 21h2v-2h-2v2zm0-4h2v-2h-2v2zM3 3v4h2V5h2V3H3zm16 0v2h2V3h-2zm-8 0v2h2V3h-2zm0 4h2V5h-2v2zm0 4h2V9h-2v2zm0 4h2v-2h-2v2zm0 4h2v-2h-2v2zm-4-4h2v-2H7v2zm0-4h2V9H7v2zm0-4h2V5H7v2zm10 8h2v-4h-2v4zm-2-4v4h2v-4h-2z"/>
+            </svg>
+            {t('qr.scan_code', 'Scan QR Code to Track')}
+          </button>
         </form>
 
         {/* Error message */}
@@ -219,6 +244,20 @@ export default function TrackComplaintPage() {
           </Link>
         </div>
       </main>
+
+      {/* QR Scanner Modal */}
+      <AnimatePresence>
+        {showScanner && (
+          <QRCodeScanner
+            onScan={handleQRScan}
+            onClose={() => setShowScanner(false)}
+            onError={(err) => {
+              console.error('QR scan error:', err);
+              setError(t('error_generic'));
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
