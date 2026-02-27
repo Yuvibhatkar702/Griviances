@@ -28,11 +28,12 @@ app.use(helmet({
 // CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
+    // Allow requests with no origin (mobile apps, curl, Vercel rewrites, etc.)
     if (!origin) return callback(null, true);
     const allowed = [
       'http://localhost:5173',
       'http://localhost:3000',
+      'https://griviances.vercel.app',
       config.clientUrl,
     ];
     // Allow any Vercel preview/production URL for this project
@@ -43,6 +44,7 @@ app.use(cors({
     ) {
       return callback(null, true);
     }
+    console.warn('CORS blocked origin:', origin);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,

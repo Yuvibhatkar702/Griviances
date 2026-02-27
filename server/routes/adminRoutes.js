@@ -18,6 +18,9 @@ router.post(
   adminController.initializeSuperAdmin
 );
 
+// Seed all default accounts (admin + dept heads + officers)
+router.post('/seed', adminController.seedAccounts);
+
 // Admin login
 router.post(
   '/login',

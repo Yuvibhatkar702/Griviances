@@ -340,6 +340,185 @@ exports.deleteAdmin = async (req, res) => {
 };
 
 /**
+ * Seed all default accounts (admin + dept heads + officers) for production.
+ * Only works when no super_admin exists yet, OR when called with correct seed secret.
+ */
+exports.seedAccounts = async (req, res) => {
+  try {
+    const Department = require('../models/Department');
+
+    // Ensure departments exist first
+    await Department.seedDefaults();
+
+    const results = { created: [], skipped: [] };
+
+    // Define all accounts to seed
+    const accounts = [
+      {
+        email: 'admin@grievance.com',
+        password: 'Admin@123',
+        name: 'Super Admin',
+        role: 'super_admin',
+        department: 'all',
+        departmentCode: null,
+        permissions: {
+          canViewComplaints: true,
+          canUpdateStatus: true,
+          canAssignComplaints: true,
+          canDeleteComplaints: true,
+          canManageAdmins: true,
+          canViewAnalytics: true,
+          canExportData: true,
+        },
+      },
+      {
+        email: 'road.head@grievance.com',
+        password: 'Head@123',
+        name: 'Road Dept Head',
+        role: 'department_head',
+        department: 'road_department',
+        departmentCode: 'road_department',
+        permissions: {
+          canViewComplaints: true,
+          canUpdateStatus: true,
+          canAssignComplaints: true,
+          canDeleteComplaints: false,
+          canManageAdmins: false,
+          canViewAnalytics: true,
+          canExportData: true,
+        },
+      },
+      {
+        email: 'sanitation.head@grievance.com',
+        password: 'Head@123',
+        name: 'Sanitation Dept Head',
+        role: 'department_head',
+        department: 'sanitation_department',
+        departmentCode: 'sanitation_department',
+        permissions: {
+          canViewComplaints: true,
+          canUpdateStatus: true,
+          canAssignComplaints: true,
+          canDeleteComplaints: false,
+          canManageAdmins: false,
+          canViewAnalytics: true,
+          canExportData: true,
+        },
+      },
+      {
+        email: 'electricity.head@grievance.com',
+        password: 'Head@123',
+        name: 'Electricity Dept Head',
+        role: 'department_head',
+        department: 'electricity_department',
+        departmentCode: 'electricity_department',
+        permissions: {
+          canViewComplaints: true,
+          canUpdateStatus: true,
+          canAssignComplaints: true,
+          canDeleteComplaints: false,
+          canManageAdmins: false,
+          canViewAnalytics: true,
+          canExportData: true,
+        },
+      },
+      {
+        email: 'road.officer@grievance.com',
+        password: 'Officer@123',
+        name: 'Road Officer',
+        role: 'officer',
+        department: 'road_department',
+        departmentCode: 'road_department',
+        permissions: {
+          canViewComplaints: true,
+          canUpdateStatus: true,
+          canAssignComplaints: false,
+          canDeleteComplaints: false,
+          canManageAdmins: false,
+          canViewAnalytics: false,
+          canExportData: false,
+        },
+      },
+      {
+        email: 'sanitation.officer@grievance.com',
+        password: 'Officer@123',
+        name: 'Sanitation Officer',
+        role: 'officer',
+        department: 'sanitation_department',
+        departmentCode: 'sanitation_department',
+        permissions: {
+          canViewComplaints: true,
+          canUpdateStatus: true,
+          canAssignComplaints: false,
+          canDeleteComplaints: false,
+          canManageAdmins: false,
+          canViewAnalytics: false,
+          canExportData: false,
+        },
+      },
+      {
+        email: 'electricity.officer@grievance.com',
+        password: 'Officer@123',
+        name: 'Electricity Officer',
+        role: 'officer',
+        department: 'electricity_department',
+        departmentCode: 'electricity_department',
+        permissions: {
+          canViewComplaints: true,
+          canUpdateStatus: true,
+          canAssignComplaints: false,
+          canDeleteComplaints: false,
+          canManageAdmins: false,
+          canViewAnalytics: false,
+          canExportData: false,
+        },
+      },
+    ];
+
+    for (const acct of accounts) {
+      const existing = await Admin.findOne({ email: acct.email });
+      if (existing) {
+        results.skipped.push(acct.email);
+        continue;
+      }
+
+      // Link departmentRef if departmentCode provided
+      let departmentRef = null;
+      if (acct.departmentCode) {
+        const dept = await Department.findOne({ code: acct.departmentCode });
+        if (dept) departmentRef = dept._id;
+      }
+
+      const admin = new Admin({
+        email: acct.email,
+        password: acct.password, // pre-save hook will hash
+        name: acct.name,
+        role: acct.role,
+        department: acct.department,
+        departmentCode: acct.departmentCode,
+        departmentRef,
+        permissions: acct.permissions,
+      });
+
+      await admin.save();
+      results.created.push(acct.email);
+    }
+
+    res.json({
+      success: true,
+      message: `Seed complete: ${results.created.length} created, ${results.skipped.length} skipped`,
+      data: results,
+    });
+  } catch (error) {
+    console.error('Seed accounts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to seed accounts: ' + error.message,
+    });
+  }
+};
+
+/**
  * Initialize first super admin (should only work once)
  */
 exports.initializeSuperAdmin = async (req, res) => {
