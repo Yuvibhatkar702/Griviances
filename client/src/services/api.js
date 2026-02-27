@@ -88,6 +88,25 @@ export const complaintApi = {
     });
     return response.data;
   },
+
+  // Reopen a resolved complaint (public)
+  reopenComplaint: async (complaintId, reason, phone) => {
+    const response = await api.post(`/complaints/status/${complaintId}/reopen`, {
+      reason,
+      phone: phone || undefined,
+    });
+    return response.data;
+  },
+
+  // Rate the officer after resolution (public)
+  rateOfficer: async (complaintId, rating, comment, phone) => {
+    const response = await api.post(`/complaints/status/${complaintId}/rate`, {
+      rating,
+      comment: comment || '',
+      phone: phone || undefined,
+    });
+    return response.data;
+  },
   
   // Get all complaints (admin)
   getAll: async (params = {}) => {

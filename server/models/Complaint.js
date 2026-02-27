@@ -99,7 +99,7 @@ const complaintSchema = new mongoose.Schema({
   // Status Tracking
   status: {
     type: String,
-    enum: ['pending', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected', 'duplicate'],
+    enum: ['pending', 'assigned', 'in_progress', 'resolved', 'reopened', 'closed', 'rejected', 'duplicate'],
     default: 'pending',
     index: true,
   },
@@ -107,7 +107,7 @@ const complaintSchema = new mongoose.Schema({
   statusHistory: [{
     status: {
       type: String,
-      enum: ['pending', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected', 'duplicate'],
+      enum: ['pending', 'assigned', 'in_progress', 'resolved', 'reopened', 'closed', 'rejected', 'duplicate'],
     },
     changedAt: {
       type: Date,
@@ -175,6 +175,25 @@ const complaintSchema = new mongoose.Schema({
       default: Date.now,
     },
   }],
+
+  // Reopen tracking
+  reopenReason: String,
+  reopenedAt: Date,
+  reopenCount: {
+    type: Number,
+    default: 0,
+  },
+
+  // Officer rating (given by citizen after resolution)
+  officerRating: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
+    },
+    comment: String,
+    submittedAt: Date,
+  },
   
   // Estimated Resolution Time (dynamic per category)
   estimatedResolution: {

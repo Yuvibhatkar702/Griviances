@@ -98,6 +98,31 @@ router.get(
   complaintController.getComplaintStatus
 );
 
+// Reopen a resolved complaint (public)
+router.post(
+  '/status/:complaintId/reopen',
+  [
+    param('complaintId').notEmpty().withMessage('Complaint ID is required'),
+    body('reason').notEmpty().withMessage('Reopen reason is required').isLength({ max: 500 }),
+    body('phone').optional(),
+  ],
+  validate,
+  complaintController.reopenComplaint
+);
+
+// Rate the officer after resolution (public)
+router.post(
+  '/status/:complaintId/rate',
+  [
+    param('complaintId').notEmpty().withMessage('Complaint ID is required'),
+    body('rating').notEmpty().isInt({ min: 1, max: 5 }).withMessage('Rating must be 1-5'),
+    body('comment').optional().isLength({ max: 500 }),
+    body('phone').optional(),
+  ],
+  validate,
+  complaintController.rateOfficer
+);
+
 /**
  * Admin Routes (protected)
  */

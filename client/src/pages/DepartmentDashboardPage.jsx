@@ -157,20 +157,60 @@ export default function DepartmentDashboardPage() {
         <div className="bg-white rounded-xl shadow-sm p-5">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Officers ({officers.length})</h2>
           <div className="flex flex-wrap gap-3">
-            {officers.map((o) => (
-              <div key={o._id} className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
-                <div className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center text-blue-700 font-bold text-sm">
-                  {o.name?.[0]?.toUpperCase()}
+            {officers.map((o) => {
+              // Find rating from stats if available
+              const ratingInfo = stats?.officerRatings?.find(r => r.officerId === o._id);
+              return (
+                <div key={o._id} className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+                  <div className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center text-blue-700 font-bold text-sm">
+                    {o.name?.[0]?.toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{o.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {o.email}
+                      {ratingInfo && (
+                        <span className="ml-1 text-yellow-600 font-medium">⭐ {ratingInfo.avgRating} ({ratingInfo.totalRatings})</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{o.name}</p>
-                  <p className="text-xs text-gray-500">{o.email}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {officers.length === 0 && <p className="text-sm text-gray-400">No officers assigned yet</p>}
           </div>
         </div>
+
+        {/* Officer Ratings Leaderboard */}
+        {stats?.officerRatings && stats.officerRatings.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-5">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Officer Ratings Leaderboard</h2>
+            <div className="space-y-3">
+              {stats.officerRatings.map((officer, index) => (
+                <div key={officer.officerId} className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                    index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-blue-400'
+                  }`}>
+                    {index + 1}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">{officer.name}</p>
+                    <p className="text-xs text-gray-500">{officer.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <span key={star} className={`text-sm ${star <= Math.round(officer.avgRating) ? 'text-yellow-400' : 'text-gray-300'}`}>★</span>
+                      ))}
+                    </div>
+                    <span className="text-sm font-bold text-gray-900">{officer.avgRating}</span>
+                    <span className="text-xs text-gray-500">({officer.totalRatings})</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex items-center gap-3">

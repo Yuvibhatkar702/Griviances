@@ -388,7 +388,14 @@ exports.getComplaintStatus = async (req, res) => {
             remarks: h.remarks,
           })),
           resolution: complaint.status === 'resolved' ? complaint.resolution : null,
-          resolutionProof: complaint.resolutionProof || [],
+          resolutionProof: (complaint.resolutionProof || []).map(p => ({
+            fileName: p.fileName,
+            url: `/uploads/${p.filePath?.split('uploads/')[1] || p.filePath?.split('uploads\\\\')[1] || p.fileName}`,
+            uploadedAt: p.uploadedAt,
+          })),
+          officerRating: complaint.officerRating || null,
+          reopenCount: complaint.reopenCount || 0,
+          reopenReason: complaint.reopenReason || null,
           image: complaint.image ? {
             fileName: complaint.image.fileName,
           } : null,
@@ -909,5 +916,156 @@ exports.updateComplaint = async (req, res) => {
       success: false,
       message: 'Failed to update complaint',
     });
+  }
+};
+
+// ─── PUBLIC: Reopen a resolved complaint ────────────────────────────
+exports.reopenComplaint = async (req, res) => {
+  try {
+    const { complaintId } = req.params;
+    const { reason, phone } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, message: 'Reopen reason is required' });
+    }
+
+    const complaint = await Complaint.findOne({ complaintId });
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    // Verify phone number for security
+    if (phone && complaint.user?.phoneNumber && complaint.user.phoneNumber !== phone) {
+      return res.status(403).json({ success: false, message: 'Phone number does not match' });
+    }
+
+    if (complaint.status !== 'resolved') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot reopen — current status is "${complaint.status}". Only resolved complaints can be reopened.`,
+      });
+    }
+
+    // Max 3 reopens
+    if ((complaint.reopenCount || 0) >= 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'This complaint has already been reopened 3 times. Please file a new complaint.',
+      });
+    }
+
+    complaint.status = 'reopened';
+    complaint.reopenReason = reason.trim();
+    complaint.reopenedAt = new Date();
+    complaint.reopenCount = (complaint.reopenCount || 0) + 1;
+    complaint.statusHistory.push({
+      status: 'reopened',
+      changedAt: new Date(),
+      remarks: `Reopened by citizen: ${reason.trim()}`,
+    });
+
+    // Reset back to assigned status so officer can rework
+    complaint.status = 'assigned';
+    complaint.resolvedAt = null;
+    complaint.statusHistory.push({
+      status: 'assigned',
+      changedAt: new Date(),
+      remarks: `Re-assigned after reopen #${complaint.reopenCount}`,
+    });
+
+    await complaint.save();
+
+    res.json({
+      success: true,
+      message: 'Complaint reopened successfully. The officer will review it again.',
+      data: {
+        complaintId: complaint.complaintId,
+        status: complaint.status,
+        reopenCount: complaint.reopenCount,
+      },
+    });
+  } catch (error) {
+    console.error('Reopen complaint error:', error);
+    res.status(500).json({ success: false, message: 'Failed to reopen complaint' });
+  }
+};
+
+// ─── PUBLIC: Rate the officer after resolution ──────────────────────
+exports.rateOfficer = async (req, res) => {
+  try {
+    const { complaintId } = req.params;
+    const { rating, comment, phone } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
+    }
+
+    const complaint = await Complaint.findOne({ complaintId });
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    // Verify phone
+    if (phone && complaint.user?.phoneNumber && complaint.user.phoneNumber !== phone) {
+      return res.status(403).json({ success: false, message: 'Phone number does not match' });
+    }
+
+    if (complaint.status !== 'resolved') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only rate a resolved complaint.',
+      });
+    }
+
+    if (complaint.officerRating?.rating) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already rated this complaint.',
+      });
+    }
+
+    if (!complaint.assignedTo) {
+      return res.status(400).json({
+        success: false,
+        message: 'No officer was assigned to this complaint.',
+      });
+    }
+
+    complaint.officerRating = {
+      rating: Math.round(rating),
+      comment: comment?.trim() || '',
+      submittedAt: new Date(),
+    };
+
+    // Also set the general feedback field for backward compat
+    complaint.feedback = {
+      rating: Math.round(rating),
+      comment: comment?.trim() || '',
+      submittedAt: new Date(),
+    };
+
+    // Close the complaint after rating (citizen is satisfied)
+    complaint.status = 'closed';
+    complaint.closedAt = new Date();
+    complaint.statusHistory.push({
+      status: 'closed',
+      changedAt: new Date(),
+      remarks: `Closed after citizen rated ${rating}/5`,
+    });
+
+    await complaint.save();
+
+    res.json({
+      success: true,
+      message: 'Thank you for your rating!',
+      data: {
+        complaintId: complaint.complaintId,
+        status: complaint.status,
+        officerRating: complaint.officerRating,
+      },
+    });
+  } catch (error) {
+    console.error('Rate officer error:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit rating' });
   }
 };

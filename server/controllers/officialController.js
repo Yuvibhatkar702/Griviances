@@ -500,13 +500,33 @@ exports.getDepartmentStats = async (req, res) => {
       Complaint.countDocuments({ department: deptCode, status: 'pending' }),
       Complaint.countDocuments({ department: deptCode, status: 'assigned' }),
       Complaint.countDocuments({ department: deptCode, status: 'in_progress' }),
-      Complaint.countDocuments({ department: deptCode, status: 'resolved' }),
+      Complaint.countDocuments({ department: deptCode, status: { $in: ['resolved', 'closed'] } }),
       Complaint.countDocuments({ department: deptCode, expectedResolveAt: { $lt: new Date() }, status: { $nin: ['resolved', 'closed'] } }),
+    ]);
+
+    // Officer ratings leaderboard
+    const officerRatings = await Complaint.aggregate([
+      { $match: { department: deptCode, 'officerRating.rating': { $exists: true, $ne: null } } },
+      { $group: {
+        _id: '$assignedTo',
+        avgRating: { $avg: '$officerRating.rating' },
+        totalRatings: { $sum: 1 },
+      }},
+      { $sort: { avgRating: -1 } },
+      { $lookup: { from: 'admins', localField: '_id', foreignField: '_id', as: 'officer' } },
+      { $unwind: '$officer' },
+      { $project: {
+        officerId: '$_id',
+        name: '$officer.name',
+        email: '$officer.email',
+        avgRating: { $round: ['$avgRating', 1] },
+        totalRatings: 1,
+      }},
     ]);
 
     res.json({
       success: true,
-      data: { total, pending, assigned, inProgress, resolved, overdue },
+      data: { total, pending, assigned, inProgress, resolved, overdue, officerRatings },
     });
   } catch (error) {
     console.error('Dept stats error:', error);
@@ -521,12 +541,20 @@ exports.getOfficerStats = async (req, res) => {
       Complaint.countDocuments({ assignedTo: req.admin._id }),
       Complaint.countDocuments({ assignedTo: req.admin._id, status: 'assigned' }),
       Complaint.countDocuments({ assignedTo: req.admin._id, status: 'in_progress' }),
-      Complaint.countDocuments({ assignedTo: req.admin._id, status: 'resolved' }),
+      Complaint.countDocuments({ assignedTo: req.admin._id, status: { $in: ['resolved', 'closed'] } }),
     ]);
+
+    // Average officer rating
+    const ratingAgg = await Complaint.aggregate([
+      { $match: { assignedTo: req.admin._id, 'officerRating.rating': { $exists: true, $ne: null } } },
+      { $group: { _id: null, avgRating: { $avg: '$officerRating.rating' }, totalRatings: { $sum: 1 } } },
+    ]);
+    const avgRating = ratingAgg[0]?.avgRating ? Math.round(ratingAgg[0].avgRating * 10) / 10 : null;
+    const totalRatings = ratingAgg[0]?.totalRatings || 0;
 
     res.json({
       success: true,
-      data: { total, assigned, inProgress, resolved },
+      data: { total, assigned, inProgress, resolved, avgRating, totalRatings },
     });
   } catch (error) {
     console.error('Officer stats error:', error);

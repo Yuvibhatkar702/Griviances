@@ -159,11 +159,31 @@ export default function OfficerDashboardPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         {/* Stats */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <StatCard label="Total Assigned" value={stats.total} icon="📋" color="bg-white border" />
             <StatCard label="Awaiting Start" value={stats.assigned} icon="⏳" color="bg-blue-50 text-blue-900" />
             <StatCard label="In Progress" value={stats.inProgress} icon="🔧" color="bg-indigo-50 text-indigo-900" />
             <StatCard label="Resolved" value={stats.resolved} icon="✅" color="bg-green-50 text-green-900" />
+            <StatCard label="Avg Rating" value={stats.avgRating ? `${stats.avgRating} ⭐` : 'N/A'} icon="⭐" color="bg-yellow-50 text-yellow-900" />
+          </div>
+        )}
+
+        {/* Rating Summary */}
+        {stats?.avgRating && (
+          <div className="bg-white rounded-xl shadow-sm p-5 border">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Your Rating</h2>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <span key={star} className={`text-2xl ${star <= Math.round(stats.avgRating) ? 'text-yellow-400' : 'text-gray-300'}`}>★</span>
+                ))}
+              </div>
+              <div>
+                <span className="text-2xl font-bold text-gray-900">{stats.avgRating}</span>
+                <span className="text-sm text-gray-500 ml-1">/ 5</span>
+              </div>
+              <span className="text-sm text-gray-500">({stats.totalRatings} {stats.totalRatings === 1 ? 'rating' : 'ratings'})</span>
+            </div>
           </div>
         )}
 

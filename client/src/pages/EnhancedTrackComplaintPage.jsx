@@ -14,9 +14,12 @@ import {
   ArrowPathIcon,
   DocumentDuplicateIcon,
   ChevronRightIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  StarIcon,
+  PhotoIcon,
+  ArrowUturnLeftIcon
 } from '@heroicons/react/24/outline';
-import { CheckCircleIcon as CheckCircleSolidIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon as CheckCircleSolidIcon, StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 import { complaintApi } from '../services/api';
 import { useToastStore } from '../store';
 import LanguageSelector from '../components/LanguageSelector';
@@ -338,6 +341,18 @@ export default function EnhancedTrackComplaintPage() {
   const [error, setError] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
 
+  // Reopen state
+  const [showReopenForm, setShowReopenForm] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
+  const [reopenLoading, setReopenLoading] = useState(false);
+
+  // Rating state
+  const [showRatingForm, setShowRatingForm] = useState(false);
+  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingHover, setRatingHover] = useState(0);
+  const [ratingComment, setRatingComment] = useState('');
+  const [ratingLoading, setRatingLoading] = useState(false);
+
   useEffect(() => {
     if (urlComplaintId) {
       setSearchId(urlComplaintId.replace(/^GRV/i, ''));
@@ -394,6 +409,51 @@ export default function EnhancedTrackComplaintPage() {
     navigate(`/track/${id}`);
     fetchComplaint(id);
   };
+
+  const handleReopen = async () => {
+    if (!reopenReason.trim()) {
+      addToast('Please provide a reason for reopening', 'error');
+      return;
+    }
+    setReopenLoading(true);
+    try {
+      const result = await complaintApi.reopenComplaint(complaint.complaintId, reopenReason.trim());
+      if (result.success) {
+        addToast(result.message || 'Complaint reopened', 'success');
+        setShowReopenForm(false);
+        setReopenReason('');
+        fetchComplaint(complaint.complaintId);
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to reopen', 'error');
+    } finally {
+      setReopenLoading(false);
+    }
+  };
+
+  const handleRate = async () => {
+    if (ratingValue < 1 || ratingValue > 5) {
+      addToast('Please select a rating', 'error');
+      return;
+    }
+    setRatingLoading(true);
+    try {
+      const result = await complaintApi.rateOfficer(complaint.complaintId, ratingValue, ratingComment.trim());
+      if (result.success) {
+        addToast(result.message || 'Thank you for your rating!', 'success');
+        setShowRatingForm(false);
+        setRatingValue(0);
+        setRatingComment('');
+        fetchComplaint(complaint.complaintId);
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to submit rating', 'error');
+    } finally {
+      setRatingLoading(false);
+    }
+  };
+
+  const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || '';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -609,6 +669,204 @@ export default function EnhancedTrackComplaintPage() {
               {/* Resolution Countdown */}
               {complaint.countdown && (
                 <ResolutionCountdown countdown={complaint.countdown} />
+              )}
+
+              {/* Resolution Proof Images */}
+              {complaint.resolutionProof && complaint.resolutionProof.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5"
+                >
+                  <div className="flex items-center gap-2 mb-4">
+                    <PhotoIcon className="w-5 h-5 text-green-600" />
+                    <h3 className="font-semibold text-gray-900">Resolution Proof</h3>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {complaint.resolutionProof.map((proof, idx) => (
+                      <a
+                        key={idx}
+                        href={`${API_BASE}${proof.url}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group relative block rounded-xl overflow-hidden border border-gray-200 hover:border-green-400 transition"
+                      >
+                        <img
+                          src={`${API_BASE}${proof.url}`}
+                          alt={`Proof ${idx + 1}`}
+                          className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-200"
+                          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                        />
+                        <div className="hidden items-center justify-center w-full h-32 bg-gray-100 text-gray-400">
+                          <PhotoIcon className="w-8 h-8" />
+                        </div>
+                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                          <p className="text-white text-xs truncate">{proof.fileName || `Proof ${idx + 1}`}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                  {complaint.resolution?.description && (
+                    <div className="mt-3 p-3 bg-green-50 rounded-xl">
+                      <p className="text-sm text-green-800">
+                        <strong>Officer remarks:</strong> {complaint.resolution.description}
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Officer Rating (already rated) */}
+              {complaint.officerRating?.rating && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-green-50 border border-green-200 rounded-2xl p-5"
+                >
+                  <h3 className="font-semibold text-green-900 mb-2">Your Rating</h3>
+                  <div className="flex items-center gap-1 mb-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <StarSolidIcon
+                        key={star}
+                        className={`w-6 h-6 ${star <= complaint.officerRating.rating ? 'text-yellow-400' : 'text-gray-300'}`}
+                      />
+                    ))}
+                    <span className="ml-2 text-sm font-medium text-green-800">{complaint.officerRating.rating}/5</span>
+                  </div>
+                  {complaint.officerRating.comment && (
+                    <p className="text-sm text-green-700 mt-1">"{complaint.officerRating.comment}"</p>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Reopen & Rate Buttons (only when resolved and not yet rated) */}
+              {complaint.status === 'resolved' && !complaint.officerRating?.rating && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4"
+                >
+                  <h3 className="font-semibold text-gray-900">Is the issue resolved?</h3>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    {/* Rate (Satisfied) */}
+                    <button
+                      onClick={() => { setShowRatingForm(true); setShowReopenForm(false); }}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition"
+                    >
+                      <StarIcon className="w-5 h-5" />
+                      Yes, Rate Officer
+                    </button>
+                    {/* Reopen (Not satisfied) */}
+                    {(complaint.reopenCount || 0) < 3 && (
+                      <button
+                        onClick={() => { setShowReopenForm(true); setShowRatingForm(false); }}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
+                      >
+                        <ArrowUturnLeftIcon className="w-5 h-5" />
+                        No, Reopen Complaint
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Rating Form */}
+                  <AnimatePresence>
+                    {showRatingForm && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="border border-green-200 rounded-xl p-4 bg-green-50 space-y-3">
+                          <p className="text-sm font-medium text-green-900">Rate the officer's work:</p>
+                          <div className="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                onMouseEnter={() => setRatingHover(star)}
+                                onMouseLeave={() => setRatingHover(0)}
+                                onClick={() => setRatingValue(star)}
+                                className="p-1 transition-transform hover:scale-110"
+                              >
+                                {star <= (ratingHover || ratingValue) ? (
+                                  <StarSolidIcon className="w-8 h-8 text-yellow-400" />
+                                ) : (
+                                  <StarIcon className="w-8 h-8 text-gray-300" />
+                                )}
+                              </button>
+                            ))}
+                            {ratingValue > 0 && (
+                              <span className="ml-2 text-sm font-medium text-green-800">{ratingValue}/5</span>
+                            )}
+                          </div>
+                          <textarea
+                            value={ratingComment}
+                            onChange={(e) => setRatingComment(e.target.value)}
+                            placeholder="Optional: Leave a comment about the officer's service..."
+                            rows={2}
+                            className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setShowRatingForm(false)}
+                              className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 text-sm transition"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleRate}
+                              disabled={ratingValue < 1 || ratingLoading}
+                              className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium transition"
+                            >
+                              {ratingLoading ? 'Submitting...' : 'Submit Rating'}
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Reopen Form */}
+                  <AnimatePresence>
+                    {showReopenForm && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="border border-orange-200 rounded-xl p-4 bg-orange-50 space-y-3">
+                          <p className="text-sm font-medium text-orange-900">
+                            Why are you not satisfied? (Reopen {(complaint.reopenCount || 0) + 1}/3)
+                          </p>
+                          <textarea
+                            value={reopenReason}
+                            onChange={(e) => setReopenReason(e.target.value)}
+                            placeholder="Explain why the issue is not resolved..."
+                            rows={3}
+                            className="w-full px-3 py-2 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+                            required
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setShowReopenForm(false)}
+                              className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 text-sm transition"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleReopen}
+                              disabled={!reopenReason.trim() || reopenLoading}
+                              className="flex-1 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 text-sm font-medium transition"
+                            >
+                              {reopenLoading ? 'Reopening...' : 'Reopen Complaint'}
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
               )}
 
               {/* Status Timeline */}
