@@ -99,7 +99,7 @@ const complaintSchema = new mongoose.Schema({
   // Status Tracking
   status: {
     type: String,
-    enum: ['pending', 'in_progress', 'resolved', 'rejected', 'duplicate'],
+    enum: ['pending', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected', 'duplicate'],
     default: 'pending',
     index: true,
   },
@@ -107,7 +107,7 @@ const complaintSchema = new mongoose.Schema({
   statusHistory: [{
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'resolved', 'rejected', 'duplicate'],
+      enum: ['pending', 'assigned', 'in_progress', 'resolved', 'closed', 'rejected', 'duplicate'],
     },
     changedAt: {
       type: Date,
@@ -145,6 +145,51 @@ const complaintSchema = new mongoose.Schema({
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Admin',
+  },
+
+  // Department assignment (auto-routed from category)
+  department: {
+    type: String,
+    trim: true,
+    index: true,
+  },
+
+  // Who assigned the officer (department_head)
+  assignedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+  },
+
+  // Workflow timestamps
+  assignedAt: Date,
+  startedAt: Date,
+  resolvedAt: Date,
+  closedAt: Date,
+
+  // Resolution proof images (uploaded by officer)
+  resolutionProof: [{
+    fileName: String,
+    filePath: String,
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  }],
+  
+  // Estimated Resolution Time (dynamic per category)
+  estimatedResolution: {
+    type: String,
+    default: '3-5 working days',
+  },
+  
+  // Resolution countdown fields
+  resolutionDays: {
+    type: Number,
+    default: 5,
+  },
+  
+  expectedResolveAt: {
+    type: Date,
   },
   
   // Resolution Details

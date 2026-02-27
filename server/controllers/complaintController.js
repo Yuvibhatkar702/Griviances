@@ -9,6 +9,9 @@ const { analyzeComplaint, suggestPriority } = require('../services/aiService');
 const { initializeSLA } = require('../services/slaService');
 const { notifyNewComplaint, notifyStatusUpdate } = require('../services/socketService');
 const { classifyImage: classifyImageService } = require('../services/imageClassificationService'); // ← NEW
+const { getEstimatedResolution, calculateExpectedResolution, calculateRemainingTime } = require('../utils/resolutionTime');
+const { getDepartmentByCategory } = require('../utils/departmentMapper');
+const { getProgressPercentage, getStatusLabel, getStatusTimeline } = require('../utils/progressTracker');
 
 /**
  * Classify an image via the Python AI model (proxy endpoint)
@@ -165,7 +168,17 @@ exports.createComplaint = async (req, res) => {
       whatsappSessionId: sessionId,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
+      estimatedResolution: getEstimatedResolution(category),
+      department: getDepartmentByCategory(category),
     });
+
+    // Set resolution countdown fields
+    const { resolutionDays, expectedResolveAt } = calculateExpectedResolution(
+      complaint.createdAt || new Date(),
+      category
+    );
+    complaint.resolutionDays = resolutionDays;
+    complaint.expectedResolveAt = expectedResolveAt;
 
     // AI Analysis
     try {
@@ -215,6 +228,9 @@ exports.createComplaint = async (req, res) => {
       data: {
         complaintId: complaint.complaintId,
         status: complaint.status,
+        estimatedResolution: complaint.estimatedResolution,
+        resolutionDays: complaint.resolutionDays,
+        expectedResolveAt: complaint.expectedResolveAt,
         address: geocodingService.formatAddressForDisplay(complaint.address),
         createdAt: complaint.createdAt,
       },
@@ -303,7 +319,9 @@ exports.getComplaintStatus = async (req, res) => {
     const { complaintId } = req.params;
     const { phone } = req.query;
 
-    const complaint = await Complaint.findOne({ complaintId });
+    const complaint = await Complaint.findOne({ complaintId })
+      .populate('assignedTo', 'name email phone')
+      .populate('assignedBy', 'name email');
 
     if (!complaint) {
       return res.status(404).json({
@@ -320,14 +338,43 @@ exports.getComplaintStatus = async (req, res) => {
       });
     }
 
+    // Calculate remaining time dynamically
+    let countdown = null;
+    if (complaint.expectedResolveAt && !['resolved', 'closed', 'rejected'].includes(complaint.status)) {
+      countdown = calculateRemainingTime(complaint.expectedResolveAt);
+      countdown.expectedResolveAt = complaint.expectedResolveAt;
+      countdown.resolutionDays = complaint.resolutionDays;
+      countdown.estimatedResolution = complaint.estimatedResolution;
+    }
+
+    // Progress tracking
+    const progress = getProgressPercentage(complaint.status);
+    const statusLabel = getStatusLabel(complaint.status);
+    const timeline = getStatusTimeline();
+
     res.json({
       success: true,
       data: {
         complaint: {
           complaintId: complaint.complaintId,
           status: complaint.status,
+          statusLabel,
+          progress,
+          timeline,
           category: complaint.category,
           description: complaint.description,
+          department: complaint.department || null,
+          assignedTo: complaint.assignedTo ? {
+            name: complaint.assignedTo.name,
+            email: complaint.assignedTo.email,
+            phone: complaint.assignedTo.phone,
+          } : null,
+          assignedBy: complaint.assignedBy ? {
+            name: complaint.assignedBy.name,
+          } : null,
+          assignedAt: complaint.assignedAt || null,
+          startedAt: complaint.startedAt || null,
+          resolvedAt: complaint.resolvedAt || null,
           location: {
             address: geocodingService.formatAddressForDisplay(complaint.address),
             coordinates: complaint.location?.coordinates,
@@ -341,9 +388,11 @@ exports.getComplaintStatus = async (req, res) => {
             remarks: h.remarks,
           })),
           resolution: complaint.status === 'resolved' ? complaint.resolution : null,
+          resolutionProof: complaint.resolutionProof || [],
           image: complaint.image ? {
             fileName: complaint.image.fileName,
           } : null,
+          countdown,
         },
       },
     });

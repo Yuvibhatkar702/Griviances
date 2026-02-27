@@ -361,4 +361,111 @@ export const analyticsApi = {
   },
 };
 
+// ─── Department APIs ────────────────────────────────────────────────
+export const departmentApi = {
+  getAll: async () => {
+    const response = await api.get('/departments');
+    return response.data;
+  },
+  getByCode: async (code) => {
+    const response = await api.get(`/departments/${code}`);
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await api.post('/departments', data);
+    return response.data;
+  },
+  update: async (id, data) => {
+    const response = await api.patch(`/departments/${id}`, data);
+    return response.data;
+  },
+  delete: async (id) => {
+    const response = await api.delete(`/departments/${id}`);
+    return response.data;
+  },
+};
+
+// ─── Official APIs (department heads + officers) ────────────────────
+export const officialApi = {
+  // Official login (email + password)
+  login: async (email, password) => {
+    const response = await api.post('/officials/login', { email, password });
+    return response.data;
+  },
+
+  // Admin: create department head
+  createDepartmentHead: async (data) => {
+    const response = await api.post('/officials/department-heads', data);
+    return response.data;
+  },
+
+  // Admin: create officer
+  createOfficer: async (data) => {
+    const response = await api.post('/officials/officers', data);
+    return response.data;
+  },
+
+  // Admin: get all officials
+  getAllOfficials: async (params = {}) => {
+    const response = await api.get('/officials/all', { params });
+    return response.data;
+  },
+
+  // Department head: get officers in department
+  getDepartmentOfficers: async () => {
+    const response = await api.get('/officials/officers');
+    return response.data;
+  },
+
+  // Department head: get department complaints
+  getDepartmentComplaints: async (params = {}) => {
+    const response = await api.get('/officials/department/complaints', { params });
+    return response.data;
+  },
+
+  // Department head: department stats
+  getDepartmentStats: async () => {
+    const response = await api.get('/officials/department/stats');
+    return response.data;
+  },
+
+  // Department head: assign officer
+  assignOfficer: async (complaintId, officerId) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/assign`, { officerId });
+    return response.data;
+  },
+
+  // Officer: get assigned complaints
+  getOfficerComplaints: async (params = {}) => {
+    const response = await api.get('/officials/officer/complaints', { params });
+    return response.data;
+  },
+
+  // Officer: stats
+  getOfficerStats: async () => {
+    const response = await api.get('/officials/officer/stats');
+    return response.data;
+  },
+
+  // Officer: start work
+  startWork: async (complaintId) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/start`);
+    return response.data;
+  },
+
+  // Officer: resolve
+  resolveComplaint: async (complaintId, formData) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/resolve`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  // Admin: reassign
+  reassignComplaint: async (complaintId, data) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/reassign`, data);
+    return response.data;
+  },
+};
+
 export default api;

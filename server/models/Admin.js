@@ -32,7 +32,7 @@ const adminSchema = new mongoose.Schema({
   // Role & Permissions
   role: {
     type: String,
-    enum: ['super_admin', 'admin', 'moderator', 'viewer'],
+    enum: ['super_admin', 'admin', 'moderator', 'viewer', 'department_head', 'officer'],
     default: 'moderator',
   },
   
@@ -46,7 +46,7 @@ const adminSchema = new mongoose.Schema({
     canExportData: { type: Boolean, default: false },
   },
   
-  // Department/Area Assignment
+  // Department/Area Assignment (legacy enum kept for backward compat)
   department: {
     type: String,
     enum: [
@@ -55,9 +55,28 @@ const adminSchema = new mongoose.Schema({
       'water',
       'sanitation',
       'general',
-      'all'
+      'all',
+      // New department codes
+      'road_department',
+      'sanitation_department',
+      'electricity_department',
+      'garden_department',
+      'enforcement_department',
     ],
     default: 'general',
+  },
+
+  // Reference to Department collection (for department_head / officer)
+  departmentRef: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+  },
+
+  // Department code string (matches Department.code)
+  departmentCode: {
+    type: String,
+    trim: true,
+    lowercase: true,
   },
   
   // Assigned area (optional, for area-based filtering)

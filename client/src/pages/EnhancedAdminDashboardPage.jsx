@@ -25,7 +25,7 @@ import {
   XMarkIcon
 } from '@heroicons/react/24/outline';
 import { useAuthStore, useToastStore } from '../store';
-import { adminApi } from '../services/api';
+import { adminApi, departmentApi, officialApi } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import NotificationCenter from '../components/NotificationCenter';
 import { useSocket, requestNotificationPermission } from '../hooks/useSocket';
@@ -317,6 +317,201 @@ function FilterPanel({ filters, onChange, onClear, categories, statuses, priorit
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Manage Panel ───────────────────────────────────────────────────
+function ManagePanel() {
+  const { addToast } = useToastStore();
+  const [departments, setDepartments] = useState([]);
+  const [officials, setOfficials] = useState([]);
+  const [activeSection, setActiveSection] = useState('departments');
+  const [loading, setLoading] = useState(true);
+
+  // Department form
+  const [deptForm, setDeptForm] = useState({ name: '', code: '', description: '' });
+  const [showDeptForm, setShowDeptForm] = useState(false);
+
+  // Official form
+  const [officialForm, setOfficialForm] = useState({ name: '', email: '', password: '', departmentCode: '', phone: '', role: 'officer' });
+  const [showOfficialForm, setShowOfficialForm] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [deptRes, officialRes] = await Promise.all([
+        departmentApi.getAll(),
+        officialApi.getAllOfficials(),
+      ]);
+      if (deptRes.success) setDepartments(deptRes.data);
+      if (officialRes.success) setOfficials(officialRes.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const handleCreateDept = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await departmentApi.create(deptForm);
+      if (res.success) {
+        addToast('Department created', 'success');
+        setDeptForm({ name: '', code: '', description: '' });
+        setShowDeptForm(false);
+        fetchData();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed', 'error');
+    }
+  };
+
+  const handleCreateOfficial = async (e) => {
+    e.preventDefault();
+    try {
+      const fn = officialForm.role === 'department_head'
+        ? officialApi.createDepartmentHead
+        : officialApi.createOfficer;
+      const res = await fn(officialForm);
+      if (res.success) {
+        addToast(`${officialForm.role === 'department_head' ? 'Department Head' : 'Officer'} created`, 'success');
+        setOfficialForm({ name: '', email: '', password: '', departmentCode: '', phone: '', role: 'officer' });
+        setShowOfficialForm(false);
+        fetchData();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed', 'error');
+    }
+  };
+
+  const roleLabel = { department_head: 'Dept Head', officer: 'Officer' };
+
+  return (
+    <div className="space-y-6">
+      {/* Section Tabs */}
+      <div className="flex gap-2">
+        {[{ key: 'departments', label: 'Departments' }, { key: 'officials', label: 'Officials' }].map(s => (
+          <button
+            key={s.key}
+            onClick={() => setActiveSection(s.key)}
+            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition ${
+              activeSection === s.key ? 'bg-primary-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Departments */}
+      {activeSection === 'departments' && (
+        <div className="bg-white rounded-2xl shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">Departments</h2>
+            <button onClick={() => setShowDeptForm(!showDeptForm)} className="px-4 py-2 bg-primary-600 text-white text-sm rounded-xl hover:bg-primary-700 transition">
+              {showDeptForm ? 'Cancel' : '+ New Department'}
+            </button>
+          </div>
+
+          {showDeptForm && (
+            <form onSubmit={handleCreateDept} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 p-4 bg-gray-50 rounded-xl">
+              <input value={deptForm.name} onChange={e => setDeptForm({ ...deptForm, name: e.target.value })} placeholder="Name" required className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
+              <input value={deptForm.code} onChange={e => setDeptForm({ ...deptForm, code: e.target.value.toLowerCase().replace(/\s/g, '_') })} placeholder="Code (e.g. road_department)" required className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
+              <input value={deptForm.description} onChange={e => setDeptForm({ ...deptForm, description: e.target.value })} placeholder="Description" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
+              <button type="submit" className="sm:col-span-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Create</button>
+            </form>
+          )}
+
+          {loading ? <p className="text-gray-400 text-center py-8">Loading…</p> : (
+            <div className="space-y-2">
+              {departments.map(d => (
+                <div key={d._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div>
+                    <p className="font-semibold text-gray-900">{d.name}</p>
+                    <p className="text-xs text-gray-500 font-mono">{d.code}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${d.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {d.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+              ))}
+              {departments.length === 0 && <p className="text-gray-400 text-center py-4">No departments yet</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Officials */}
+      {activeSection === 'officials' && (
+        <div className="bg-white rounded-2xl shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">Officials</h2>
+            <button onClick={() => setShowOfficialForm(!showOfficialForm)} className="px-4 py-2 bg-primary-600 text-white text-sm rounded-xl hover:bg-primary-700 transition">
+              {showOfficialForm ? 'Cancel' : '+ New Official'}
+            </button>
+          </div>
+
+          {showOfficialForm && (
+            <form onSubmit={handleCreateOfficial} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 p-4 bg-gray-50 rounded-xl">
+              <input value={officialForm.name} onChange={e => setOfficialForm({ ...officialForm, name: e.target.value })} placeholder="Full Name" required className="px-3 py-2 border rounded-lg" />
+              <input type="email" value={officialForm.email} onChange={e => setOfficialForm({ ...officialForm, email: e.target.value })} placeholder="Email" required className="px-3 py-2 border rounded-lg" />
+              <input type="password" value={officialForm.password} onChange={e => setOfficialForm({ ...officialForm, password: e.target.value })} placeholder="Password (min 8)" required minLength={8} className="px-3 py-2 border rounded-lg" />
+              <input value={officialForm.phone} onChange={e => setOfficialForm({ ...officialForm, phone: e.target.value })} placeholder="Phone (optional)" className="px-3 py-2 border rounded-lg" />
+              <select value={officialForm.departmentCode} onChange={e => setOfficialForm({ ...officialForm, departmentCode: e.target.value })} required className="px-3 py-2 border rounded-lg">
+                <option value="">Select Department</option>
+                {departments.map(d => <option key={d._id} value={d.code}>{d.name}</option>)}
+              </select>
+              <select value={officialForm.role} onChange={e => setOfficialForm({ ...officialForm, role: e.target.value })} className="px-3 py-2 border rounded-lg">
+                <option value="officer">Officer</option>
+                <option value="department_head">Department Head</option>
+              </select>
+              <button type="submit" className="sm:col-span-2 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Create</button>
+            </form>
+          )}
+
+          {loading ? <p className="text-gray-400 text-center py-8">Loading…</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Email</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Department</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {officials.map(o => (
+                    <tr key={o._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{o.name}</td>
+                      <td className="px-4 py-3 text-gray-600">{o.email}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          o.role === 'department_head' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {roleLabel[o.role] || o.role}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.departmentCode || o.department}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${o.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {o.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {officials.length === 0 && <p className="text-gray-400 text-center py-8">No officials yet</p>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -651,6 +846,14 @@ export default function EnhancedAdminDashboardPage() {
               >
                 <MapIcon className="w-5 h-5" />
               </button>
+              <button
+                onClick={() => setView('manage')}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                  view === 'manage' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600'
+                }`}
+              >
+                <AdjustmentsHorizontalIcon className="w-5 h-5" />
+              </button>
             </div>
 
             <button className="p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
@@ -889,6 +1092,9 @@ export default function EnhancedAdminDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* === MANAGE PANEL (Departments, Officials) === */}
+        {view === 'manage' && <ManagePanel />}
       </main>
 
       {/* Bulk Actions Bar */}

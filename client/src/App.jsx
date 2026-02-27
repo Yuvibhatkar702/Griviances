@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
-import { useAuthStore } from './store';
+import { useAuthStore, useOfficialStore } from './store';
 import Toast from './components/Toast';
 
 // Pages - Enhanced versions
@@ -15,12 +15,28 @@ import ComplaintDetailPage from './pages/ComplaintDetailPage';
 import CommunityFeedPage from './pages/CommunityFeedPage';
 import CitizenPortalPage from './pages/CitizenPortalPage';
 
-// Protected Route Component
+// Official / Role-based Pages
+import OfficialLoginPage from './pages/OfficialLoginPage';
+import DepartmentDashboardPage from './pages/DepartmentDashboardPage';
+import OfficerDashboardPage from './pages/OfficerDashboardPage';
+
+// Protected Route Component (admin)
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuthStore();
   
   if (!isAuthenticated) {
     return <Navigate to="/admin/login" replace />;
+  }
+  
+  return children;
+}
+
+// Protected Route for officials (department_head or officer)
+function OfficialProtectedRoute({ children, allowedRoles }) {
+  const { isAuthenticated, official } = useOfficialStore();
+  
+  if (!isAuthenticated || (allowedRoles && !allowedRoles.includes(official?.role))) {
+    return <Navigate to="/official-login" replace />;
   }
   
   return children;
@@ -63,6 +79,9 @@ function App() {
         <Route path="/community" element={<CommunityFeedPage />} />
         <Route path="/citizen" element={<CitizenPortalPage />} />
         
+        {/* Official Login (unified for admin, dept head, officer) */}
+        <Route path="/official-login" element={<OfficialLoginPage />} />
+        
         {/* Admin Routes */}
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route
@@ -79,6 +98,26 @@ function App() {
             <ProtectedRoute>
               <ComplaintDetailPage />
             </ProtectedRoute>
+          }
+        />
+        
+        {/* Department Head Dashboard */}
+        <Route
+          path="/department"
+          element={
+            <OfficialProtectedRoute allowedRoles={['department_head']}>
+              <DepartmentDashboardPage />
+            </OfficialProtectedRoute>
+          }
+        />
+        
+        {/* Officer Dashboard */}
+        <Route
+          path="/officer"
+          element={
+            <OfficialProtectedRoute allowedRoles={['officer']}>
+              <OfficerDashboardPage />
+            </OfficialProtectedRoute>
           }
         />
         

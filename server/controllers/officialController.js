@@ -1,0 +1,535 @@
+const jwt = require('jsonwebtoken');
+const Admin = require('../models/Admin');
+const Complaint = require('../models/Complaint');
+const Department = require('../models/Department');
+const AuditLog = require('../models/AuditLog');
+const config = require('../config');
+const { getProgressPercentage, getStatusLabel, getStatusTimeline } = require('../utils/progressTracker');
+const { calculateRemainingTime } = require('../utils/resolutionConfig');
+
+/**
+ * Generate JWT token for official
+ */
+const generateToken = (official) => {
+  return jwt.sign(
+    { id: official._id, email: official.email, role: official.role },
+    config.jwtSecret,
+    { expiresIn: config.jwtExpiresIn }
+  );
+};
+
+// ─── ADMIN: Create department head ─────────────────────────────────
+exports.createDepartmentHead = async (req, res) => {
+  try {
+    const { name, email, password, departmentCode, phone } = req.body;
+
+    if (!name || !email || !password || !departmentCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'name, email, password, and departmentCode are required',
+      });
+    }
+
+    const dept = await Department.findOne({ code: departmentCode, isActive: true });
+    if (!dept) {
+      return res.status(400).json({ success: false, message: 'Invalid department code' });
+    }
+
+    const existing = await Admin.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Email already registered' });
+    }
+
+    const head = await Admin.create({
+      name,
+      email,
+      password,
+      phone: phone || '',
+      role: 'department_head',
+      department: departmentCode,
+      departmentCode,
+      departmentRef: dept._id,
+      isActive: true,
+      permissions: {
+        canViewComplaints: true,
+        canUpdateStatus: true,
+        canAssignComplaints: true,
+        canDeleteComplaints: false,
+        canManageAdmins: false,
+        canViewAnalytics: true,
+        canExportData: true,
+      },
+    });
+
+    await AuditLog.log('department_head_created', {
+      admin: req.admin._id,
+      details: { headId: head._id, department: departmentCode },
+    });
+
+    res.status(201).json({ success: true, data: head.toJSON() });
+  } catch (error) {
+    console.error('Create dept head error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create department head' });
+  }
+};
+
+// ─── ADMIN: Create officer ─────────────────────────────────────────
+exports.createOfficer = async (req, res) => {
+  try {
+    const { name, email, password, departmentCode, phone } = req.body;
+
+    if (!name || !email || !password || !departmentCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'name, email, password, and departmentCode are required',
+      });
+    }
+
+    const dept = await Department.findOne({ code: departmentCode, isActive: true });
+    if (!dept) {
+      return res.status(400).json({ success: false, message: 'Invalid department code' });
+    }
+
+    const existing = await Admin.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Email already registered' });
+    }
+
+    const officer = await Admin.create({
+      name,
+      email,
+      password,
+      phone: phone || '',
+      role: 'officer',
+      department: departmentCode,
+      departmentCode,
+      departmentRef: dept._id,
+      isActive: true,
+      permissions: {
+        canViewComplaints: true,
+        canUpdateStatus: true,
+        canAssignComplaints: false,
+        canDeleteComplaints: false,
+        canManageAdmins: false,
+        canViewAnalytics: false,
+        canExportData: false,
+      },
+    });
+
+    await AuditLog.log('officer_created', {
+      admin: req.admin._id,
+      details: { officerId: officer._id, department: departmentCode },
+    });
+
+    res.status(201).json({ success: true, data: officer.toJSON() });
+  } catch (error) {
+    console.error('Create officer error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create officer' });
+  }
+};
+
+// ─── OFFICIAL: Login (email + password) ─────────────────────────────
+exports.officialLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
+    }
+
+    const official = await Admin.findByCredentials(email, password);
+    const token = generateToken(official);
+
+    await AuditLog.log('official_login', {
+      admin: official._id,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        official: official.toJSON(),
+        token,
+      },
+    });
+  } catch (error) {
+    console.error('Official login error:', error);
+    res.status(401).json({ success: false, message: error.message || 'Authentication failed' });
+  }
+};
+
+// ─── Get all officers of a department (for dept head) ──────────────
+exports.getDepartmentOfficers = async (req, res) => {
+  try {
+    const deptCode = req.admin.departmentCode || req.admin.department;
+    const officers = await Admin.find({
+      role: 'officer',
+      $or: [{ departmentCode: deptCode }, { department: deptCode }],
+      isActive: true,
+    }).select('name email phone role departmentCode');
+
+    res.json({ success: true, data: officers });
+  } catch (error) {
+    console.error('Get officers error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch officers' });
+  }
+};
+
+// ─── Get all officials (admin) ─────────────────────────────────────
+exports.getAllOfficials = async (req, res) => {
+  try {
+    const filter = { role: { $in: ['department_head', 'officer'] } };
+    if (req.query.department) filter.departmentCode = req.query.department;
+    if (req.query.role) filter.role = req.query.role;
+
+    const officials = await Admin.find(filter)
+      .select('name email phone role departmentCode department isActive createdAt')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: officials });
+  } catch (error) {
+    console.error('Get officials error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch officials' });
+  }
+};
+
+// ─── DEPARTMENT HEAD: Get complaints for own department ─────────────
+exports.getDepartmentComplaints = async (req, res) => {
+  try {
+    const deptCode = req.admin.departmentCode || req.admin.department;
+    const { status, page = 1, limit = 20 } = req.query;
+
+    const filter = { department: deptCode };
+    if (status) filter.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [complaints, total] = await Promise.all([
+      Complaint.find(filter)
+        .populate('assignedTo', 'name email phone')
+        .populate('assignedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Complaint.countDocuments(filter),
+    ]);
+
+    // Enrich with progress + countdown
+    const enriched = complaints.map((c) => {
+      const obj = c.toObject();
+      obj.progress = getProgressPercentage(c.status);
+      obj.statusLabel = getStatusLabel(c.status);
+      if (c.expectedResolveAt) {
+        obj.countdown = calculateRemainingTime(c.expectedResolveAt);
+      }
+      return obj;
+    });
+
+    res.json({
+      success: true,
+      data: enriched,
+      pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) },
+    });
+  } catch (error) {
+    console.error('Dept complaints error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch department complaints' });
+  }
+};
+
+// ─── DEPARTMENT HEAD: Assign officer to complaint ───────────────────
+exports.assignOfficer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { officerId } = req.body;
+
+    if (!officerId) {
+      return res.status(400).json({ success: false, message: 'officerId is required' });
+    }
+
+    const complaint = await Complaint.findById(id);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    // Verify officer exists and belongs to same department
+    const deptCode = req.admin.departmentCode || req.admin.department;
+    const officer = await Admin.findOne({
+      _id: officerId,
+      role: 'officer',
+      $or: [{ departmentCode: deptCode }, { department: deptCode }],
+      isActive: true,
+    });
+
+    if (!officer) {
+      return res.status(400).json({ success: false, message: 'Officer not found in your department' });
+    }
+
+    complaint.assignedTo = officer._id;
+    complaint.assignedBy = req.admin._id;
+    complaint.assignedAt = new Date();
+    complaint.status = 'assigned';
+    complaint.statusHistory.push({
+      status: 'assigned',
+      changedAt: new Date(),
+      changedBy: req.admin._id,
+      remarks: `Assigned to ${officer.name} by ${req.admin.name}`,
+    });
+    await complaint.save();
+
+    await AuditLog.log('complaint_assigned', {
+      admin: req.admin._id,
+      complaint: complaint._id,
+      details: { officerId: officer._id, officerName: officer.name },
+    });
+
+    res.json({
+      success: true,
+      message: `Complaint assigned to ${officer.name}`,
+      data: {
+        complaintId: complaint.complaintId,
+        status: complaint.status,
+        assignedTo: { _id: officer._id, name: officer.name, email: officer.email },
+        assignedAt: complaint.assignedAt,
+      },
+    });
+  } catch (error) {
+    console.error('Assign officer error:', error);
+    res.status(500).json({ success: false, message: 'Failed to assign officer' });
+  }
+};
+
+// ─── OFFICER: Get assigned complaints ──────────────────────────────
+exports.getOfficerComplaints = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    const filter = { assignedTo: req.admin._id };
+    if (status) filter.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [complaints, total] = await Promise.all([
+      Complaint.find(filter)
+        .populate('assignedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Complaint.countDocuments(filter),
+    ]);
+
+    const enriched = complaints.map((c) => {
+      const obj = c.toObject();
+      obj.progress = getProgressPercentage(c.status);
+      obj.statusLabel = getStatusLabel(c.status);
+      if (c.expectedResolveAt) {
+        obj.countdown = calculateRemainingTime(c.expectedResolveAt);
+      }
+      return obj;
+    });
+
+    res.json({
+      success: true,
+      data: enriched,
+      pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) },
+    });
+  } catch (error) {
+    console.error('Officer complaints error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch assigned complaints' });
+  }
+};
+
+// ─── OFFICER: Start work on complaint ──────────────────────────────
+exports.startWork = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const complaint = await Complaint.findById(id);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    if (String(complaint.assignedTo) !== String(req.admin._id)) {
+      return res.status(403).json({ success: false, message: 'Not assigned to you' });
+    }
+
+    if (complaint.status !== 'assigned') {
+      return res.status(400).json({ success: false, message: `Cannot start work — current status is "${complaint.status}"` });
+    }
+
+    complaint.status = 'in_progress';
+    complaint.startedAt = new Date();
+    complaint.statusHistory.push({
+      status: 'in_progress',
+      changedAt: new Date(),
+      changedBy: req.admin._id,
+      remarks: `Work started by ${req.admin.name}`,
+    });
+    await complaint.save();
+
+    await AuditLog.log('complaint_work_started', {
+      admin: req.admin._id,
+      complaint: complaint._id,
+    });
+
+    res.json({
+      success: true,
+      message: 'Work started',
+      data: {
+        complaintId: complaint.complaintId,
+        status: complaint.status,
+        startedAt: complaint.startedAt,
+        progress: getProgressPercentage(complaint.status),
+      },
+    });
+  } catch (error) {
+    console.error('Start work error:', error);
+    res.status(500).json({ success: false, message: 'Failed to start work' });
+  }
+};
+
+// ─── OFFICER: Resolve complaint ─────────────────────────────────────
+exports.resolveComplaint = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { remarks } = req.body;
+
+    const complaint = await Complaint.findById(id);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    if (String(complaint.assignedTo) !== String(req.admin._id)) {
+      return res.status(403).json({ success: false, message: 'Not assigned to you' });
+    }
+
+    if (!['assigned', 'in_progress'].includes(complaint.status)) {
+      return res.status(400).json({ success: false, message: `Cannot resolve — current status is "${complaint.status}"` });
+    }
+
+    // Handle proof images if uploaded
+    if (req.files && req.files.length > 0) {
+      complaint.resolutionProof = req.files.map((f) => ({
+        fileName: f.filename,
+        filePath: f.path,
+        uploadedAt: new Date(),
+      }));
+    }
+
+    complaint.status = 'resolved';
+    complaint.resolvedAt = new Date();
+    complaint.resolution = {
+      description: remarks || 'Issue resolved',
+      resolvedAt: new Date(),
+    };
+    complaint.statusHistory.push({
+      status: 'resolved',
+      changedAt: new Date(),
+      changedBy: req.admin._id,
+      remarks: remarks || 'Resolved by officer',
+    });
+    await complaint.save();
+
+    await AuditLog.log('complaint_resolved', {
+      admin: req.admin._id,
+      complaint: complaint._id,
+      details: { hasProof: !!(req.files && req.files.length) },
+    });
+
+    res.json({
+      success: true,
+      message: 'Complaint resolved',
+      data: {
+        complaintId: complaint.complaintId,
+        status: complaint.status,
+        resolvedAt: complaint.resolvedAt,
+        progress: getProgressPercentage(complaint.status),
+      },
+    });
+  } catch (error) {
+    console.error('Resolve error:', error);
+    res.status(500).json({ success: false, message: 'Failed to resolve complaint' });
+  }
+};
+
+// ─── ADMIN: Reassign complaint ──────────────────────────────────────
+exports.reassignComplaint = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { officerId, departmentCode } = req.body;
+
+    const complaint = await Complaint.findById(id);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    // If changing department
+    if (departmentCode) {
+      complaint.department = departmentCode;
+    }
+
+    if (officerId) {
+      const officer = await Admin.findOne({ _id: officerId, role: 'officer', isActive: true });
+      if (!officer) {
+        return res.status(400).json({ success: false, message: 'Officer not found' });
+      }
+      complaint.assignedTo = officer._id;
+      complaint.assignedBy = req.admin._id;
+      complaint.assignedAt = new Date();
+      complaint.status = 'assigned';
+      complaint.statusHistory.push({
+        status: 'assigned',
+        changedAt: new Date(),
+        changedBy: req.admin._id,
+        remarks: `Reassigned to ${officer.name} by admin`,
+      });
+    }
+
+    await complaint.save();
+
+    res.json({ success: true, message: 'Complaint reassigned', data: complaint });
+  } catch (error) {
+    console.error('Reassign error:', error);
+    res.status(500).json({ success: false, message: 'Failed to reassign' });
+  }
+};
+
+// ─── Department stats ──────────────────────────────────────────────
+exports.getDepartmentStats = async (req, res) => {
+  try {
+    const deptCode = req.admin.departmentCode || req.admin.department;
+
+    const [total, pending, assigned, inProgress, resolved, overdue] = await Promise.all([
+      Complaint.countDocuments({ department: deptCode }),
+      Complaint.countDocuments({ department: deptCode, status: 'pending' }),
+      Complaint.countDocuments({ department: deptCode, status: 'assigned' }),
+      Complaint.countDocuments({ department: deptCode, status: 'in_progress' }),
+      Complaint.countDocuments({ department: deptCode, status: 'resolved' }),
+      Complaint.countDocuments({ department: deptCode, expectedResolveAt: { $lt: new Date() }, status: { $nin: ['resolved', 'closed'] } }),
+    ]);
+
+    res.json({
+      success: true,
+      data: { total, pending, assigned, inProgress, resolved, overdue },
+    });
+  } catch (error) {
+    console.error('Dept stats error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+};
+
+// ─── Officer stats ──────────────────────────────────────────────────
+exports.getOfficerStats = async (req, res) => {
+  try {
+    const [total, assigned, inProgress, resolved] = await Promise.all([
+      Complaint.countDocuments({ assignedTo: req.admin._id }),
+      Complaint.countDocuments({ assignedTo: req.admin._id, status: 'assigned' }),
+      Complaint.countDocuments({ assignedTo: req.admin._id, status: 'in_progress' }),
+      Complaint.countDocuments({ assignedTo: req.admin._id, status: 'resolved' }),
+    ]);
+
+    res.json({
+      success: true,
+      data: { total, assigned, inProgress, resolved },
+    });
+  } catch (error) {
+    console.error('Officer stats error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+};

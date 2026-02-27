@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,7 +13,8 @@ import {
   ExclamationCircleIcon,
   ArrowPathIcon,
   DocumentDuplicateIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolidIcon } from '@heroicons/react/24/solid';
 import { complaintApi } from '../services/api';
@@ -135,6 +136,101 @@ function StatusTimeline({ history, currentStatus }) {
         )}
       </div>
     </div>
+  );
+}
+
+// Resolution Countdown Component
+function ResolutionCountdown({ countdown }) {
+  const { t } = useTranslation();
+  const [remaining, setRemaining] = useState(null);
+
+  const calculateRemaining = useCallback(() => {
+    if (!countdown?.expectedResolveAt) return null;
+    const now = new Date();
+    const diff = new Date(countdown.expectedResolveAt).getTime() - now.getTime();
+    if (diff <= 0) {
+      return { remainingDays: 0, remainingHours: 0, remainingMinutes: 0, remainingSeconds: 0, isOverdue: true };
+    }
+    return {
+      remainingDays: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      remainingHours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+      remainingMinutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+      remainingSeconds: Math.floor((diff % (1000 * 60)) / 1000),
+      isOverdue: false,
+    };
+  }, [countdown]);
+
+  useEffect(() => {
+    setRemaining(calculateRemaining());
+    const interval = setInterval(() => {
+      setRemaining(calculateRemaining());
+    }, 1000); // Update every second
+    return () => clearInterval(interval);
+  }, [calculateRemaining]);
+
+  if (!remaining) return null;
+
+  if (remaining.isOverdue) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-red-50 border border-red-200 rounded-2xl p-4"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <ExclamationTriangleIcon className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-red-800">
+              {t('resolution_overdue', 'Resolution Time Exceeded')}
+            </p>
+            <p className="text-sm text-red-600 mt-0.5">
+              {t('escalation_required', 'Escalation required — expected within')} {countdown.resolutionDays} {t('days', 'days')}
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-blue-50 border border-blue-200 rounded-2xl p-4"
+    >
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <ClockIcon className="w-5 h-5 text-blue-600" />
+        </div>
+        <div className="flex-1">
+          <p className="font-semibold text-blue-800">
+            {t('expected_resolution_in', 'Expected Resolution In')}
+          </p>
+          <div className="flex items-baseline gap-1 mt-1">
+            {remaining.remainingDays > 0 && (
+              <span className="text-2xl font-bold text-blue-700">
+                {remaining.remainingDays}<span className="text-sm font-medium ml-0.5">{t('d', 'd')}</span>
+              </span>
+            )}
+            <span className="text-2xl font-bold text-blue-700">
+              {String(remaining.remainingHours).padStart(2, '0')}<span className="text-sm font-medium ml-0.5">{t('h', 'h')}</span>
+            </span>
+            <span className="text-2xl font-bold text-blue-700">
+              {String(remaining.remainingMinutes).padStart(2, '0')}<span className="text-sm font-medium ml-0.5">{t('m', 'm')}</span>
+            </span>
+            <span className="text-2xl font-bold text-blue-600">
+              {String(remaining.remainingSeconds).padStart(2, '0')}<span className="text-sm font-medium ml-0.5">{t('s', 's')}</span>
+            </span>
+          </div>
+          <p className="text-xs text-blue-500 mt-1">
+            {countdown.estimatedResolution || `${countdown.resolutionDays} days`}
+             — {t('live_countdown', 'live countdown')}
+          </p>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -428,6 +524,92 @@ export default function EnhancedTrackComplaintPage() {
 
               {/* Complaint Card */}
               <ComplaintCard complaint={complaint} />
+
+              {/* Progress Bar */}
+              {complaint.progress !== undefined && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-gray-900">{t('progress', 'Progress')}</h3>
+                    <span className="text-sm font-bold text-primary-600">{complaint.progress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${complaint.progress}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      className={`h-3 rounded-full ${
+                        complaint.progress >= 100 ? 'bg-green-500' : complaint.progress >= 70 ? 'bg-indigo-500' : complaint.progress >= 40 ? 'bg-blue-500' : 'bg-yellow-500'
+                      }`}
+                    />
+                  </div>
+                  {/* Workflow milestones */}
+                  {complaint.timeline && (
+                    <div className="flex justify-between mt-2">
+                      {complaint.timeline.map((step) => (
+                        <span
+                          key={step.key}
+                          className={`text-xs ${complaint.progress >= step.progress ? 'text-primary-600 font-medium' : 'text-gray-400'}`}
+                        >
+                          {step.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Assignment & Department Info */}
+              {(complaint.department || complaint.assignedTo) && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-3"
+                >
+                  <h3 className="font-semibold text-gray-900">{t('assignment_info', 'Assignment Details')}</h3>
+                  {complaint.department && (
+                    <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
+                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">{t('department', 'Department')}</p>
+                        <p className="font-medium text-gray-900">
+                          {complaint.department.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {complaint.assignedTo && (
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">{t('assigned_officer', 'Assigned Officer')}</p>
+                        <p className="font-medium text-gray-900">{complaint.assignedTo.name}</p>
+                      </div>
+                    </div>
+                  )}
+                  {complaint.assignedAt && (
+                    <p className="text-xs text-gray-400 pl-1">
+                      Assigned on {new Date(complaint.assignedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Resolution Countdown */}
+              {complaint.countdown && (
+                <ResolutionCountdown countdown={complaint.countdown} />
+              )}
 
               {/* Status Timeline */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">

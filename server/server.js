@@ -10,6 +10,8 @@ const config = require('./config');
 const { complaintRoutes, adminRoutes, whatsappRoutes } = require('./routes');
 const citizenRoutes = require('./routes/citizenRoutes');
 const communityRoutes = require('./routes/communityRoutes');
+const departmentRoutes = require('./routes/departmentRoutes');
+const officialRoutes = require('./routes/officialRoutes');
 const { initializeSocket } = require('./services/socketService');
 const { initializeSLACron } = require('./services/slaService');
 const { verifyConnection: verifyEmailConnection } = require('./services/emailService');
@@ -83,6 +85,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/citizen', citizenRoutes);
 app.use('/api/community', communityRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/officials', officialRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -139,7 +143,7 @@ const startServer = async () => {
     console.log('✅ Connected to MongoDB');
 
     // Create indexes (drop conflicting indexes first)
-    const { Complaint, Admin, AuditLog } = require('./models');
+    const { Complaint, Admin, AuditLog, Department } = require('./models');
     
     try {
       // Drop the old phoneNumber index if it exists with different options
@@ -151,7 +155,11 @@ const startServer = async () => {
     await Complaint.createIndexes();
     await Admin.createIndexes();
     await AuditLog.createIndexes();
+    await Department.createIndexes();
     console.log('✅ Database indexes created');
+
+    // Seed default departments
+    await Department.seedDefaults();
 
     // Initialize Socket.IO
     initializeSocket(server);

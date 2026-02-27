@@ -837,6 +837,7 @@ function SubmitComplaintContent() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicates, setDuplicates] = useState([]);
   const [submittedComplaintId, setSubmittedComplaintId] = useState(null);
+  const [estimatedResolution, setEstimatedResolution] = useState(null);
   const [confirmNotDuplicate, setConfirmNotDuplicate] = useState(false);
 
   // ── Phone verification state
@@ -1025,6 +1026,7 @@ function SubmitComplaintContent() {
         if (result.success) {
         await clearDraftComplaint();
         setSubmittedComplaintId(result.data.complaintId);
+        setEstimatedResolution(result.data.estimatedResolution);
         setSubmitProgress(100);
         addToast(t('complaint_submitted_toast', 'Complaint submitted!'), 'success');
       } else if (result.isDuplicate) {
@@ -1061,7 +1063,7 @@ function SubmitComplaintContent() {
         <ComplaintSuccess
           complaintId={submittedComplaintId}
           trackingUrl={`${window.location.origin}/track/${submittedComplaintId}`}
-          estimatedTime={t('estimated_3_5_days', '3–5 working days')}
+          estimatedTime={estimatedResolution || t('estimated_3_5_days', '3–5 working days')}
           onTrackStatus={() => navigate(`/track/${submittedComplaintId}`)}
           onNewComplaint={() => {
             setSubmittedComplaintId(null);

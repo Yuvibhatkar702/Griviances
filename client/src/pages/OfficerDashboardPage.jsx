@@ -1,0 +1,315 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useOfficialStore, useToastStore } from '../store';
+import { officialApi } from '../services/api';
+
+// ─── Status badge ───────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  const colors = {
+    assigned: 'bg-blue-100 text-blue-800',
+    in_progress: 'bg-indigo-100 text-indigo-800',
+    resolved: 'bg-green-100 text-green-800',
+  };
+  const labels = {
+    assigned: 'Assigned',
+    in_progress: 'In Progress',
+    resolved: 'Resolved',
+  };
+  return (
+    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-600'}`}>
+      {labels[status] || status}
+    </span>
+  );
+}
+
+// ─── Countdown display ──────────────────────────────────────────────
+function Countdown({ countdown }) {
+  if (!countdown) return null;
+  if (countdown.isOverdue) {
+    return <span className="text-red-600 text-xs font-semibold">Overdue by {countdown.remainingDays}d {countdown.remainingHours}h</span>;
+  }
+  return <span className="text-gray-600 text-xs">{countdown.remainingDays}d {countdown.remainingHours}h left</span>;
+}
+
+// ─── Stat card ──────────────────────────────────────────────────────
+function StatCard({ label, value, icon, color }) {
+  return (
+    <div className={`rounded-xl p-5 ${color} shadow-sm`}>
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{icon}</span>
+        <div>
+          <p className="text-sm font-medium opacity-80">{label}</p>
+          <p className="text-3xl font-bold">{value}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function OfficerDashboardPage() {
+  const navigate = useNavigate();
+  const { official, isAuthenticated, logout } = useOfficialStore();
+  const { addToast } = useToastStore();
+
+  const [stats, setStats] = useState(null);
+  const [complaints, setComplaints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
+  const [resolveModalOpen, setResolveModalOpen] = useState(false);
+  const [selectedComplaint, setSelectedComplaint] = useState(null);
+  const [resolveRemarks, setResolveRemarks] = useState('');
+  const [resolveFiles, setResolveFiles] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null);
+
+  useEffect(() => {
+    if (!isAuthenticated || official?.role !== 'officer') {
+      navigate('/official-login');
+    }
+  }, [isAuthenticated, official, navigate]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [statsRes, complaintsRes] = await Promise.all([
+        officialApi.getOfficerStats(),
+        officialApi.getOfficerComplaints({ status: statusFilter, page, limit: 15 }),
+      ]);
+      if (statsRes.success) setStats(statsRes.data);
+      if (complaintsRes.success) {
+        setComplaints(complaintsRes.data);
+        setPagination(complaintsRes.pagination);
+      }
+    } catch (error) {
+      console.error('Fetch error:', error);
+      if (error.response?.status === 401) {
+        logout();
+        navigate('/official-login');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, page, logout, navigate]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleStartWork = async (complaint) => {
+    setActionLoading(complaint._id);
+    try {
+      const res = await officialApi.startWork(complaint._id);
+      if (res.success) {
+        addToast('Work started', 'success');
+        fetchData();
+      }
+    } catch (error) {
+      addToast(error.response?.data?.message || 'Failed to start work', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleResolve = async () => {
+    if (!selectedComplaint) return;
+    setActionLoading(selectedComplaint._id);
+    try {
+      const formData = new FormData();
+      formData.append('remarks', resolveRemarks || 'Issue resolved');
+      if (resolveFiles) {
+        Array.from(resolveFiles).forEach((f) => formData.append('proof', f));
+      }
+      const res = await officialApi.resolveComplaint(selectedComplaint._id, formData);
+      if (res.success) {
+        addToast('Complaint resolved', 'success');
+        setResolveModalOpen(false);
+        setSelectedComplaint(null);
+        setResolveRemarks('');
+        setResolveFiles(null);
+        fetchData();
+      }
+    } catch (error) {
+      addToast(error.response?.data?.message || 'Failed to resolve', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/official-login');
+  };
+
+  if (!isAuthenticated || official?.role !== 'officer') return null;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Officer Dashboard</h1>
+            <p className="text-sm text-gray-500">Welcome, {official?.name}</p>
+          </div>
+          <button onClick={handleLogout} className="px-4 py-2 text-sm bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition">
+            Logout
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Stats */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard label="Total Assigned" value={stats.total} icon="📋" color="bg-white border" />
+            <StatCard label="Awaiting Start" value={stats.assigned} icon="⏳" color="bg-blue-50 text-blue-900" />
+            <StatCard label="In Progress" value={stats.inProgress} icon="🔧" color="bg-indigo-50 text-indigo-900" />
+            <StatCard label="Resolved" value={stats.resolved} icon="✅" color="bg-green-50 text-green-900" />
+          </div>
+        )}
+
+        {/* Filters */}
+        <div className="flex items-center gap-3">
+          <label className="text-sm font-medium text-gray-600">Filter:</label>
+          {['', 'assigned', 'in_progress', 'resolved'].map((s) => (
+            <button
+              key={s}
+              onClick={() => { setStatusFilter(s); setPage(1); }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border'
+              }`}
+            >
+              {s === '' ? 'All' : s.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+            </button>
+          ))}
+        </div>
+
+        {/* Complaints */}
+        <div className="space-y-4">
+          {loading ? (
+            <div className="bg-white rounded-xl p-12 text-center text-gray-400 shadow-sm">Loading…</div>
+          ) : complaints.length === 0 ? (
+            <div className="bg-white rounded-xl p-12 text-center text-gray-400 shadow-sm">No complaints found</div>
+          ) : (
+            complaints.map((c) => (
+              <div key={c._id} className="bg-white rounded-xl shadow-sm p-5 hover:shadow-md transition">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm font-bold text-gray-900">{c.complaintId}</span>
+                    <StatusBadge status={c.status} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Countdown countdown={c.countdown} />
+                    <span className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+
+                <p className="text-sm text-gray-700 mb-1"><strong>Category:</strong> {c.category}</p>
+                {c.description && <p className="text-sm text-gray-600 mb-2 line-clamp-2">{c.description}</p>}
+                {c.address?.fullAddress && <p className="text-xs text-gray-400 mb-3">{c.address.fullAddress}</p>}
+
+                {/* Progress bar */}
+                <div className="mb-3">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                    <span>Progress</span>
+                    <span>{c.progress || 0}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-500 ${
+                        c.progress >= 100 ? 'bg-green-500' : c.progress >= 70 ? 'bg-indigo-500' : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${c.progress || 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  {c.status === 'assigned' && (
+                    <button
+                      onClick={() => handleStartWork(c)}
+                      disabled={actionLoading === c._id}
+                      className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition"
+                    >
+                      {actionLoading === c._id ? 'Starting…' : 'Start Work'}
+                    </button>
+                  )}
+                  {['assigned', 'in_progress'].includes(c.status) && (
+                    <button
+                      onClick={() => { setSelectedComplaint(c); setResolveModalOpen(true); }}
+                      disabled={actionLoading === c._id}
+                      className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 transition"
+                    >
+                      Mark Resolved
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Pagination */}
+        {pagination && pagination.pages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">Page {pagination.page} of {pagination.pages}</p>
+            <div className="flex gap-2">
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 hover:bg-white transition">Prev</button>
+              <button disabled={page >= pagination.pages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 hover:bg-white transition">Next</button>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Resolve Modal */}
+      {resolveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Resolve Complaint</h3>
+            <p className="text-sm text-gray-500 mb-4">{selectedComplaint?.complaintId}</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Resolution Remarks</label>
+                <textarea
+                  value={resolveRemarks}
+                  onChange={(e) => setResolveRemarks(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Describe the resolution…"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Upload Proof (optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => setResolveFiles(e.target.files)}
+                  className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => { setResolveModalOpen(false); setResolveRemarks(''); setResolveFiles(null); }}
+                className="flex-1 py-2.5 border rounded-xl text-gray-700 hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResolve}
+                disabled={actionLoading === selectedComplaint?._id}
+                className="flex-1 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 transition"
+              >
+                {actionLoading === selectedComplaint?._id ? 'Resolving…' : 'Resolve'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

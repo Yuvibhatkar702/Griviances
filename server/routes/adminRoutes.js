@@ -83,11 +83,13 @@ router.post(
     body('name').notEmpty().withMessage('Name is required'),
     body('role')
       .optional()
-      .isIn(['super_admin', 'admin', 'moderator', 'viewer'])
+      .isIn(['super_admin', 'admin', 'moderator', 'viewer', 'department_head', 'officer'])
       .withMessage('Invalid role'),
     body('department')
       .optional()
-      .isIn(['roads', 'electricity', 'water', 'sanitation', 'general', 'all'])
+      .isIn(['roads', 'electricity', 'water', 'sanitation', 'general', 'all',
+        'road_department', 'sanitation_department', 'electricity_department',
+        'garden_department', 'enforcement_department'])
       .withMessage('Invalid department'),
   ],
   validate,
