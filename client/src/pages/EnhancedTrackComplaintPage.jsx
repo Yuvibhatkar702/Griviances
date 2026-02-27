@@ -278,7 +278,7 @@ function ComplaintCard({ complaint }) {
           </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide">{t('category')}</p>
-            <p className="font-medium text-gray-900">{t(`categories.${complaint.category}`)}</p>
+            <p className="font-medium text-gray-900">{complaint.category}</p>
           </div>
         </div>
 
@@ -584,43 +584,6 @@ export default function EnhancedTrackComplaintPage() {
 
               {/* Complaint Card */}
               <ComplaintCard complaint={complaint} />
-
-              {/* Progress Bar */}
-              {complaint.progress !== undefined && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-semibold text-gray-900">{t('progress', 'Progress')}</h3>
-                    <span className="text-sm font-bold text-primary-600">{complaint.progress}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${complaint.progress}%` }}
-                      transition={{ duration: 0.8, ease: 'easeOut' }}
-                      className={`h-3 rounded-full ${
-                        complaint.progress >= 100 ? 'bg-green-500' : complaint.progress >= 70 ? 'bg-indigo-500' : complaint.progress >= 40 ? 'bg-blue-500' : 'bg-yellow-500'
-                      }`}
-                    />
-                  </div>
-                  {/* Workflow milestones */}
-                  {complaint.timeline && (
-                    <div className="flex justify-between mt-2">
-                      {complaint.timeline.map((step) => (
-                        <span
-                          key={step.key}
-                          className={`text-xs ${complaint.progress >= step.progress ? 'text-primary-600 font-medium' : 'text-gray-400'}`}
-                        >
-                          {step.label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </motion.div>
-              )}
 
               {/* Assignment & Department Info */}
               {(complaint.department || complaint.assignedTo) && (

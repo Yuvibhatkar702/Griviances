@@ -46,6 +46,8 @@ function StatCard({ label, value, icon, color }) {
   );
 }
 
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '');
+
 export default function OfficerDashboardPage() {
   const navigate = useNavigate();
   const { official, isAuthenticated, logout } = useOfficialStore();
@@ -62,6 +64,7 @@ export default function OfficerDashboardPage() {
   const [resolveRemarks, setResolveRemarks] = useState('');
   const [resolveFiles, setResolveFiles] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
 
   useEffect(() => {
     if (!isAuthenticated || official?.role !== 'officer') {
@@ -210,7 +213,12 @@ export default function OfficerDashboardPage() {
           ) : complaints.length === 0 ? (
             <div className="bg-white rounded-xl p-12 text-center text-gray-400 shadow-sm">No complaints found</div>
           ) : (
-            complaints.map((c) => (
+            complaints.map((c) => {
+              const rawPath = c.image?.filePath || c.images?.[0]?.filePath || '';
+              const imgSrc = rawPath
+                ? `${API_BASE}/${rawPath.replace(/\\/g, '/')}`
+                : null;
+              return (
               <div key={c._id} className="bg-white rounded-xl shadow-sm p-5 hover:shadow-md transition">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
@@ -219,13 +227,30 @@ export default function OfficerDashboardPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Countdown countdown={c.countdown} />
-                    <span className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString()}</span>
+                    <span className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString()} {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 </div>
 
-                <p className="text-sm text-gray-700 mb-1"><strong>Category:</strong> {c.category}</p>
-                {c.description && <p className="text-sm text-gray-600 mb-2 line-clamp-2">{c.description}</p>}
-                {c.address?.fullAddress && <p className="text-xs text-gray-400 mb-3">{c.address.fullAddress}</p>}
+                <div className="flex gap-4 mb-3">
+                  {/* Image thumbnail */}
+                  {imgSrc ? (
+                    <img
+                      src={imgSrc}
+                      alt="complaint"
+                      className="w-24 h-24 rounded-lg object-cover cursor-pointer border flex-shrink-0 hover:opacity-80"
+                      onClick={() => setImagePreview(imgSrc)}
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div className="w-24 h-24 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-gray-300 text-xs border">No image</div>
+                  )}
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-sm text-gray-700"><strong>Category:</strong> {c.category}</p>
+                    <p className="text-sm text-gray-700"><strong>Phone:</strong> {c.user?.phoneNumber || '—'}</p>
+                    {c.description && <p className="text-sm text-gray-600">{c.description}</p>}
+                    {c.address?.fullAddress && <p className="text-xs text-gray-400">{c.address.fullAddress}</p>}
+                  </div>
+                </div>
 
                 {/* Progress bar */}
                 <div className="mb-3">
@@ -265,7 +290,8 @@ export default function OfficerDashboardPage() {
                   )}
                 </div>
               </div>
-            ))
+            );
+            })
           )}
         </div>
 
@@ -280,6 +306,13 @@ export default function OfficerDashboardPage() {
           </div>
         )}
       </main>
+
+      {/* Image Preview Modal */}
+      {imagePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setImagePreview(null)}>
+          <img src={imagePreview} alt="Preview" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl" />
+        </div>
+      )}
 
       {/* Resolve Modal */}
       {resolveModalOpen && (

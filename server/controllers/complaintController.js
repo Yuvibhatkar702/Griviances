@@ -388,11 +388,15 @@ exports.getComplaintStatus = async (req, res) => {
             remarks: h.remarks,
           })),
           resolution: complaint.status === 'resolved' ? complaint.resolution : null,
-          resolutionProof: (complaint.resolutionProof || []).map(p => ({
-            fileName: p.fileName,
-            url: `/uploads/${p.filePath?.split('uploads/')[1] || p.filePath?.split('uploads\\\\')[1] || p.fileName}`,
-            uploadedAt: p.uploadedAt,
-          })),
+          resolutionProof: (complaint.resolutionProof || []).map(p => {
+            const normalized = (p.filePath || '').replace(/\\/g, '/');
+            const afterUploads = normalized.split('uploads/')[1] || p.fileName;
+            return {
+              fileName: p.fileName,
+              url: `/uploads/${afterUploads}`,
+              uploadedAt: p.uploadedAt,
+            };
+          }),
           officerRating: complaint.officerRating || null,
           reopenCount: complaint.reopenCount || 0,
           reopenReason: complaint.reopenReason || null,

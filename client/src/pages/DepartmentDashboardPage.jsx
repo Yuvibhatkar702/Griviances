@@ -48,10 +48,13 @@ function StatCard({ label, value, color }) {
   );
 }
 
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '');
+
 export default function DepartmentDashboardPage() {
   const navigate = useNavigate();
   const { official, token, isAuthenticated, logout } = useOfficialStore();
   const { addToast } = useToastStore();
+  const [imagePreview, setImagePreview] = useState(null);
 
   const [stats, setStats] = useState(null);
   const [complaints, setComplaints] = useState([]);
@@ -228,63 +231,132 @@ export default function DepartmentDashboardPage() {
           ))}
         </div>
 
-        {/* Complaints Table */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        {/* Complaints */}
+        <div className="space-y-4">
           {loading ? (
-            <div className="p-12 text-center text-gray-400">Loading…</div>
+            <div className="bg-white rounded-xl p-12 text-center text-gray-400 shadow-sm">Loading…</div>
           ) : complaints.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">No complaints found</div>
+            <div className="bg-white rounded-xl p-12 text-center text-gray-400 shadow-sm">No complaints found</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">ID</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Category</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Progress</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Officer</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Date</th>
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {complaints.map((c) => (
-                    <tr key={c._id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-gray-900">{c.complaintId}</td>
-                      <td className="px-4 py-3 text-gray-700">{c.category}</td>
-                      <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
-                      <td className="px-4 py-3 w-32"><ProgressBar value={c.progress || 0} /></td>
-                      <td className="px-4 py-3 text-gray-600">{c.assignedTo?.name || '—'}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{new Date(c.createdAt).toLocaleDateString()}</td>
-                      <td className="px-4 py-3">
-                        {['pending', 'assigned'].includes(c.status) && (
-                          <button
-                            onClick={() => { setSelectedComplaint(c); setAssignModalOpen(true); }}
-                            className="px-3 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition"
-                          >
-                            Assign
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+            complaints.map((c) => {
+              const rawPath = c.image?.filePath || c.images?.[0]?.filePath || '';
+              const imgSrc = rawPath
+                ? `${API_BASE}/${rawPath.replace(/\\/g, '/')}`
+                : null;
+              // Resolution proof image
+              const proofPath = c.resolutionProof?.[0]?.filePath || '';
+              const proofSrc = proofPath
+                ? `${API_BASE}/${proofPath.replace(/\\/g, '/')}`
+                : null;
+              return (
+                <div key={c._id} className="bg-white rounded-xl shadow-sm p-5 hover:shadow-md transition">
+                  {/* Header row */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm font-bold text-gray-900">{c.complaintId}</span>
+                      <StatusBadge status={c.status} />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {/* Countdown */}
+                      {c.countdown && (
+                        c.countdown.isOverdue ? (
+                          <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded-lg">
+                            ⚠ Overdue by {c.countdown.remainingDays}d {c.countdown.remainingHours}h
+                          </span>
+                        ) : (
+                          <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-lg">
+                            ⏱ {c.countdown.remainingDays}d {c.countdown.remainingHours}h left
+                          </span>
+                        )
+                      )}
+                      <span className="text-xs text-gray-400">
+                        {new Date(c.createdAt).toLocaleDateString()} {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {['pending', 'assigned'].includes(c.status) && (
+                        <button
+                          onClick={() => { setSelectedComplaint(c); setAssignModalOpen(true); }}
+                          className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition font-medium"
+                        >
+                          Assign
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
-          {/* Pagination */}
-          {pagination && pagination.pages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50">
-              <p className="text-sm text-gray-500">Page {pagination.page} of {pagination.pages} ({pagination.total} total)</p>
-              <div className="flex gap-2">
-                <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 hover:bg-white transition">Prev</button>
-                <button disabled={page >= pagination.pages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 hover:bg-white transition">Next</button>
-              </div>
-            </div>
+                  {/* Content: Image + Details */}
+                  <div className="flex gap-4">
+                    {imgSrc ? (
+                      <img
+                        src={imgSrc}
+                        alt="complaint"
+                        className="w-24 h-24 rounded-lg object-cover cursor-pointer border flex-shrink-0 hover:opacity-80 transition"
+                        onClick={() => setImagePreview(imgSrc)}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="w-24 h-24 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-gray-300 text-xs border">No image</div>
+                    )}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-sm text-gray-800"><span className="font-semibold">Category:</span> {c.category}</p>
+                      <p className="text-sm text-gray-800"><span className="font-semibold">Phone:</span> {c.user?.phoneNumber || '—'}</p>
+                      {c.user?.name && <p className="text-sm text-gray-800"><span className="font-semibold">Name:</span> {c.user.name}</p>}
+                      <p className="text-sm text-gray-800"><span className="font-semibold">Officer:</span> {c.assignedTo?.name || '—'}</p>
+                      {c.description && (
+                        <p className="text-sm text-gray-600"><span className="font-semibold text-gray-800">Description:</span> {c.description}</p>
+                      )}
+                      {c.address?.fullAddress && (
+                        <p className="text-sm text-gray-500"><span className="font-semibold text-gray-700">Address:</span> {c.address.fullAddress}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Resolution Proof */}
+                  {proofSrc && ['resolved', 'closed'].includes(c.status) && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <p className="text-xs font-semibold text-green-700 mb-2">📷 Resolution Proof</p>
+                      <div className="flex gap-2">
+                        {c.resolutionProof.map((p, i) => {
+                          const pSrc = `${API_BASE}/${(p.filePath || '').replace(/\\/g, '/')}`;
+                          return (
+                            <img
+                              key={i}
+                              src={pSrc}
+                              alt={`Proof ${i + 1}`}
+                              className="w-16 h-16 rounded-lg object-cover cursor-pointer border hover:opacity-80 transition"
+                              onClick={() => setImagePreview(pSrc)}
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          );
+                        })}
+                      </div>
+                      {c.resolution?.description && (
+                        <p className="text-xs text-gray-500 mt-1"><strong>Remarks:</strong> {c.resolution.description}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
+
+        {/* Image Preview Modal */}
+        {imagePreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setImagePreview(null)}>
+            <img src={imagePreview} alt="Preview" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl" />
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pagination && pagination.pages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 bg-white rounded-xl shadow-sm">
+            <p className="text-sm text-gray-500">Page {pagination.page} of {pagination.pages} ({pagination.total} total)</p>
+            <div className="flex gap-2">
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 hover:bg-white transition">Prev</button>
+              <button disabled={page >= pagination.pages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 hover:bg-white transition">Next</button>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Assign Modal */}
