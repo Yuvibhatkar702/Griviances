@@ -34,10 +34,6 @@ export default function OfficialLoginPage() {
 
         // Role-based redirect
         switch (official.role) {
-          case 'super_admin':
-          case 'admin':
-            navigate('/admin/dashboard');
-            break;
           case 'department_head':
             navigate('/department');
             break;
@@ -45,7 +41,7 @@ export default function OfficialLoginPage() {
             navigate('/officer');
             break;
           default:
-            navigate('/admin/dashboard');
+            navigate('/officer');
         }
       }
     } catch (error) {

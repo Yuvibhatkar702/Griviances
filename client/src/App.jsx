@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore, useOfficialStore } from './store';
 import Toast from './components/Toast';
 
@@ -20,25 +20,49 @@ import OfficialLoginPage from './pages/OfficialLoginPage';
 import DepartmentDashboardPage from './pages/DepartmentDashboardPage';
 import OfficerDashboardPage from './pages/OfficerDashboardPage';
 
-// Protected Route Component (admin)
+// ─── Hydration helpers ──────────────────────────────────────────────
+// Uses zustand persist's built-in API: persist.hasHydrated() + persist.onFinishHydration()
+function useStoreHydrated(store) {
+  const [hydrated, setHydrated] = useState(store.persist.hasHydrated());
+  useEffect(() => {
+    const unsub = store.persist.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, [store]);
+  return hydrated;
+}
+
+function HydrationSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        <p className="text-sm text-gray-500">Loading…</p>
+      </div>
+    </div>
+  );
+}
+
+// Protected Route Component (admin) — waits for hydration before deciding
 function ProtectedRoute({ children }) {
+  const hydrated = useStoreHydrated(useAuthStore);
   const { isAuthenticated } = useAuthStore();
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
-  }
-  
+
+  if (!hydrated) return <HydrationSpinner />;
+  if (!isAuthenticated) return <Navigate to="/admin/login" replace />;
+
   return children;
 }
 
-// Protected Route for officials (department_head or officer)
+// Protected Route for officials (department_head or officer) — waits for hydration
 function OfficialProtectedRoute({ children, allowedRoles }) {
+  const hydrated = useStoreHydrated(useOfficialStore);
   const { isAuthenticated, official } = useOfficialStore();
-  
+
+  if (!hydrated) return <HydrationSpinner />;
   if (!isAuthenticated || (allowedRoles && !allowedRoles.includes(official?.role))) {
     return <Navigate to="/official-login" replace />;
   }
-  
+
   return children;
 }
 

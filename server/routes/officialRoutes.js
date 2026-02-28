@@ -135,4 +135,13 @@ router.patch(
   officialController.reassignComplaint
 );
 
+// ─── ADMIN: Delete (deactivate) an official ─────────────────────────
+router.delete(
+  '/:id',
+  authorize('super_admin', 'admin'),
+  [param('id').isMongoId().withMessage('Invalid official ID')],
+  validate,
+  officialController.deleteOfficial
+);
+
 module.exports = router;

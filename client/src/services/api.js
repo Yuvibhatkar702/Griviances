@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useAuthStore } from '../store';
+import { useAuthStore, useOfficialStore } from '../store';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -12,9 +12,17 @@ const api = axios.create({
 });
 
 // Request interceptor to add auth token
+// Checks both the admin store and the official store so officer/dept-head
+// API calls automatically include the right bearer token.
 api.interceptors.request.use(
   (config) => {
-    const token = useAuthStore.getState().token;
+    // If the caller already set an Authorization header (e.g. citizen API), keep it
+    if (config.headers.Authorization) return config;
+
+    // Prefer official store token (dept-head / officer), fall back to admin store
+    const officialToken = useOfficialStore.getState().token;
+    const adminToken = useAuthStore.getState().token;
+    const token = officialToken || adminToken;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -26,14 +34,12 @@ api.interceptors.request.use(
 );
 
 // Response interceptor to handle errors
+// NOTE: We do NOT auto-logout/redirect here. Each page handles its own 401
+// responses so the correct store is cleared and the correct login page is shown.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
-      useAuthStore.getState().logout();
-      window.location.href = '/admin/login';
-    }
+    // Just propagate – individual pages decide what to do on 401
     return Promise.reject(error);
   }
 );
@@ -483,6 +489,12 @@ export const officialApi = {
   // Admin: reassign
   reassignComplaint: async (complaintId, data) => {
     const response = await api.patch(`/officials/complaints/${complaintId}/reassign`, data);
+    return response.data;
+  },
+
+  // Admin: delete (deactivate) an official
+  deleteOfficial: async (id) => {
+    const response = await api.delete(`/officials/${id}`);
     return response.data;
   },
 };

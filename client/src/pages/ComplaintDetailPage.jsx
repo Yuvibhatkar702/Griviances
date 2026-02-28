@@ -7,6 +7,8 @@ import { useAuthStore, useToastStore } from '../store';
 import { adminApi } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '');
+
 // Fix Leaflet default icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -165,7 +167,7 @@ export default function ComplaintDetailPage() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-gray-500">Category</p>
-                  <p className="font-medium">{t(`categories.${complaint.category}`)}</p>
+                  <p className="font-medium">{complaint.category}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Submitted</p>
@@ -173,16 +175,16 @@ export default function ComplaintDetailPage() {
                     {new Date(complaint.createdAt).toLocaleString()}
                   </p>
                 </div>
+                <div>
+                  <p className="text-gray-500">Phone Number</p>
+                  <p className="font-medium">{complaint.user?.phoneNumber || complaint.whatsappNumber || 'N/A'}</p>
+                </div>
                 {complaint.assignedTo && (
                   <div>
                     <p className="text-gray-500">Assigned To</p>
                     <p className="font-medium">{complaint.assignedTo.name}</p>
                   </div>
                 )}
-                <div>
-                  <p className="text-gray-500">WhatsApp Number</p>
-                  <p className="font-medium">{complaint.whatsappNumber || 'N/A'}</p>
-                </div>
               </div>
             </div>
 
@@ -198,7 +200,7 @@ export default function ComplaintDetailPage() {
             <div className="card">
               <h2 className="text-lg font-semibold mb-4">Location</h2>
               <p className="text-gray-700 mb-4">
-                {complaint.location?.address || 'Address not available'}
+                {complaint.address?.fullAddress || complaint.location?.address || 'Address not available'}
               </p>
               
               {location && (
@@ -225,28 +227,45 @@ export default function ComplaintDetailPage() {
               )}
             </div>
 
-            {/* Images */}
-            {complaint.images && complaint.images.length > 0 && (
+            {/* Complaint Image */}
+            {complaint.image?.filePath && (
               <div className="card">
-                <h2 className="text-lg font-semibold mb-4">
-                  Images ({complaint.images.length})
-                </h2>
+                <h2 className="text-lg font-semibold mb-4">Complaint Photo</h2>
+                <div className="rounded-lg overflow-hidden bg-gray-100">
+                  <img
+                    src={`${API_BASE}/${complaint.image.filePath.replace(/\\/g, '/')}`}
+                    alt="Complaint"
+                    className="w-full max-h-[500px] object-contain cursor-pointer"
+                    onClick={() => window.open(`${API_BASE}/${complaint.image.filePath.replace(/\\/g, '/')}`, '_blank')}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Resolution Proof Images */}
+            {complaint.resolutionProof && complaint.resolutionProof.length > 0 && (
+              <div className="card">
+                <h2 className="text-lg font-semibold mb-4">Resolution Proof ({complaint.resolutionProof.length})</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {complaint.images.map((image, index) => (
-                    <a
-                      key={index}
-                      href={image.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition"
-                    >
-                      <img
-                        src={image.thumbnailUrl || image.url}
-                        alt={`Complaint image ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </a>
-                  ))}
+                  {complaint.resolutionProof.map((proof, index) => {
+                    const proofUrl = proof.url || (proof.filePath ? `${API_BASE}/${proof.filePath.replace(/\\/g, '/')}` : null);
+                    if (!proofUrl) return null;
+                    return (
+                      <a
+                        key={index}
+                        href={proofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition"
+                      >
+                        <img
+                          src={proofUrl}
+                          alt={`Resolution proof ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -334,8 +353,8 @@ export default function ComplaintDetailPage() {
               <h3 className="font-semibold mb-4">Reporter Information</h3>
               <div className="space-y-3 text-sm">
                 <div>
-                  <p className="text-gray-500">WhatsApp</p>
-                  <p className="font-medium">{complaint.whatsappNumber || 'N/A'}</p>
+                  <p className="text-gray-500">Phone</p>
+                  <p className="font-medium">{complaint.user?.phoneNumber || complaint.whatsappNumber || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Preferred Language</p>

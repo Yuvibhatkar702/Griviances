@@ -63,8 +63,13 @@ function MapBoundsUpdater({ complaints }) {
   useEffect(() => {
     if (complaints.length > 0) {
       const bounds = complaints
-        .filter(c => c.location?.coordinates)
-        .map(c => [c.location.coordinates[1], c.location.coordinates[0]]);
+        .filter(c => (c.coordinates?.lat != null) || c.location?.coordinates)
+        .map(c => {
+          const lat = c.coordinates?.lat ?? c.location?.coordinates?.[1];
+          const lng = c.coordinates?.lng ?? c.location?.coordinates?.[0];
+          return [lat, lng];
+        })
+        .filter(([lat, lng]) => lat != null && lng != null);
       if (bounds.length > 0) {
         map.fitBounds(bounds, { padding: [20, 20], maxZoom: 13 });
       }
@@ -388,6 +393,32 @@ function ManagePanel() {
     }
   };
 
+  const handleDeleteDepartment = async (dept) => {
+    if (!window.confirm(`Are you sure you want to remove "${dept.name}"? This will deactivate the department.`)) return;
+    try {
+      const res = await departmentApi.delete(dept._id);
+      if (res.success) {
+        addToast('Department removed', 'success');
+        fetchData();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to remove department', 'error');
+    }
+  };
+
+  const handleDeleteOfficial = async (official) => {
+    if (!window.confirm(`Are you sure you want to remove "${official.name}"? This will deactivate their account.`)) return;
+    try {
+      const res = await officialApi.deleteOfficial(official._id);
+      if (res.success) {
+        addToast(res.message || 'Official removed', 'success');
+        fetchData();
+      }
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to remove official', 'error');
+    }
+  };
+
   const roleLabel = { department_head: 'Dept Head', officer: 'Officer' };
 
   return (
@@ -434,9 +465,19 @@ function ManagePanel() {
                     <p className="font-semibold text-gray-900">{d.name}</p>
                     <p className="text-xs text-gray-500 font-mono">{d.code}</p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${d.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {d.isActive ? 'Active' : 'Inactive'}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${d.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {d.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                    {d.isActive && (
+                      <button
+                        onClick={() => handleDeleteDepartment(d)}
+                        className="text-xs px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition font-medium"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
               {departments.length === 0 && <p className="text-gray-400 text-center py-4">No departments yet</p>}
@@ -483,6 +524,7 @@ function ManagePanel() {
                     <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">Department</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -502,6 +544,16 @@ function ManagePanel() {
                         <span className={`text-xs px-2 py-0.5 rounded-full ${o.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {o.isActive ? 'Active' : 'Inactive'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {o.isActive && o.role !== 'super_admin' && (
+                          <button
+                            onClick={() => handleDeleteOfficial(o)}
+                            className="text-xs px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition font-medium"
+                          >
+                            Remove
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -566,13 +618,6 @@ export default function EnhancedAdminDashboardPage() {
   const statuses = ['pending', 'assigned', 'in_progress', 'resolved', 'rejected', 'closed'];
   const priorities = ['low', 'medium', 'high', 'critical'];
 
-  // Auth check
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/admin/login');
-    }
-  }, [isAuthenticated, navigate]);
-
   // Fetch data
   const fetchStats = useCallback(async () => {
     try {
@@ -617,7 +662,7 @@ export default function EnhancedAdminDashboardPage() {
       const params = Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== ''));
       const result = await adminApi.getMapData(params);
       if (result.success) {
-        setMapComplaints(result.data.complaints);
+        setMapComplaints(Array.isArray(result.data) ? result.data : result.data.complaints || []);
       }
     } catch (error) {
       console.error('Error fetching map data:', error);
@@ -856,7 +901,32 @@ export default function EnhancedAdminDashboardPage() {
               </button>
             </div>
 
-            <button className="p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+            <button
+              onClick={() => {
+                if (!complaints.length) return;
+                const headers = ['Complaint ID','Category','Status','Priority','Date','Location','Phone','Description'];
+                const rows = complaints.map(c => [
+                  c.complaintId,
+                  c.category,
+                  c.status,
+                  c.priority || '',
+                  new Date(c.createdAt).toLocaleDateString(),
+                  (c.address?.fullAddress || c.location?.address || '').replace(/,/g, ' '),
+                  c.user?.phoneNumber || '',
+                  (c.description || '').replace(/[\n\r,]/g, ' '),
+                ]);
+                const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `complaints_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition"
+              title="Download CSV"
+            >
               <DocumentArrowDownIcon className="w-5 h-5 text-gray-600" />
             </button>
           </div>
@@ -887,26 +957,25 @@ export default function EnhancedAdminDashboardPage() {
                         className="rounded border-gray-300"
                       />
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('id')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Complaint ID</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('category')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('location')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('status')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('priority')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('sla')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('date')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Submitted</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Deadline</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{t('actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {isLoading ? (
                     <tr>
-                      <td colSpan="9" className="px-4 py-12 text-center">
+                      <td colSpan="8" className="px-4 py-12 text-center">
                         <div className="inline-block w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
                       </td>
                     </tr>
                   ) : complaints.length === 0 ? (
                     <tr>
-                      <td colSpan="9" className="px-4 py-12 text-center text-gray-500">
+                      <td colSpan="8" className="px-4 py-12 text-center text-gray-500">
                         {t('no_complaints_found')}
                       </td>
                     </tr>
@@ -930,10 +999,7 @@ export default function EnhancedAdminDashboardPage() {
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900">
-                          {t(`categories.${complaint.category}`)}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
-                          {complaint.location?.address || 'N/A'}
+                          {complaint.category}
                         </td>
                         <td className="px-4 py-3">
                           <StatusBadge status={complaint.status} />
@@ -941,14 +1007,14 @@ export default function EnhancedAdminDashboardPage() {
                         <td className="px-4 py-3">
                           <PriorityBadge priority={complaint.priority} />
                         </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {new Date(complaint.createdAt).toLocaleDateString()}
+                        </td>
                         <td className="px-4 py-3">
                           <SLATimer
                             createdAt={complaint.createdAt}
                             status={complaint.status}
                           />
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {new Date(complaint.createdAt).toLocaleDateString()}
                         </td>
                         <td className="px-4 py-3">
                           <Link
@@ -1010,10 +1076,10 @@ export default function EnhancedAdminDashboardPage() {
                   <StatusBadge status={complaint.status} size="sm" />
                 </div>
                 <p className="text-sm font-medium text-gray-900 mb-1">
-                  {t(`categories.${complaint.category}`)}
+                  {complaint.category}
                 </p>
                 <p className="text-sm text-gray-500 line-clamp-2 mb-3">
-                  {complaint.location?.address || complaint.description}
+                  {complaint.address?.fullAddress || complaint.location?.address || complaint.description}
                 </p>
                 <div className="flex items-center justify-between">
                   <PriorityBadge priority={complaint.priority} />
@@ -1039,12 +1105,13 @@ export default function EnhancedAdminDashboardPage() {
                 <MapBoundsUpdater complaints={mapComplaints} />
                 
                 {mapComplaints.map((complaint) => {
-                  if (!complaint.location?.coordinates) return null;
-                  const [lng, lat] = complaint.location.coordinates;
+                  const lat = complaint.coordinates?.lat ?? complaint.location?.coordinates?.[1];
+                  const lng = complaint.coordinates?.lng ?? complaint.location?.coordinates?.[0];
+                  if (lat == null || lng == null) return null;
                   const icon = markerIcons[complaint.status] || markerIcons.pending;
                   
                   return (
-                    <Marker key={complaint._id} position={[lat, lng]} icon={icon}>
+                    <Marker key={complaint._id || complaint.id} position={[lat, lng]} icon={icon}>
                       <Popup>
                         <div className="min-w-[200px] p-1">
                           <div className="flex items-center justify-between mb-2">
@@ -1054,10 +1121,10 @@ export default function EnhancedAdminDashboardPage() {
                             <StatusBadge status={complaint.status} size="sm" />
                           </div>
                           <p className="font-medium text-sm mb-1">
-                            {t(`categories.${complaint.category}`)}
+                            {complaint.category}
                           </p>
                           <p className="text-xs text-gray-500 mb-2 line-clamp-2">
-                            {complaint.location?.address}
+                            {complaint.address || 'N/A'}
                           </p>
                           <Link
                             to={`/admin/complaints/${complaint._id}`}

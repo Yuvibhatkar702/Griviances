@@ -35,8 +35,8 @@ export default function ComplaintSuccess({
     if (navigator.share) {
       try {
         await navigator.share({
-          title: t('complaint_submitted'),
-          text: `${t('complaint_id')}: ${complaintId}`,
+          title: 'Complaint Submitted',
+          text: `Complaint ID: ${complaintId}`,
           url: trackingUrl,
         });
       } catch (err) {
@@ -103,7 +103,7 @@ export default function ComplaintSuccess({
           transition={{ delay: 0.2 }}
           className="text-2xl font-bold text-gray-900 mb-2"
         >
-          {t('complaint_submitted_success')}
+          Complaint Submitted!
         </motion.h1>
         
         <motion.p
@@ -112,7 +112,7 @@ export default function ComplaintSuccess({
           transition={{ delay: 0.3 }}
           className="text-gray-600"
         >
-          {t('complaint_submitted_message')}
+          Your complaint has been registered successfully.
         </motion.p>
       </div>
 
@@ -123,7 +123,7 @@ export default function ComplaintSuccess({
         transition={{ delay: 0.4 }}
         className="bg-gradient-to-br from-primary-600 to-primary-700 rounded-2xl p-6 text-white mb-6"
       >
-        <p className="text-primary-100 text-sm mb-2">{t('your_complaint_id')}</p>
+        <p className="text-primary-100 text-sm mb-2">Your Complaint ID</p>
         <div className="flex items-center justify-between">
           <span className="text-2xl font-bold font-mono tracking-wider">
             {complaintId}
@@ -131,7 +131,7 @@ export default function ComplaintSuccess({
           <button
             onClick={copyToClipboard}
             className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition"
-            title={t('copy_to_clipboard')}
+            title="Copy to clipboard"
           >
             <DocumentDuplicateIcon className="w-5 h-5" />
           </button>
@@ -139,7 +139,7 @@ export default function ComplaintSuccess({
         
         {estimatedTime && (
           <div className="mt-4 pt-4 border-t border-white/20">
-            <p className="text-primary-100 text-xs">{t('estimated_resolution')}</p>
+            <p className="text-primary-100 text-xs">Estimated Resolution</p>
             <p className="font-medium">{estimatedTime}</p>
           </div>
         )}
@@ -153,7 +153,7 @@ export default function ComplaintSuccess({
         className="bg-white rounded-2xl p-6 shadow-lg mb-6"
       >
         <h3 className="font-semibold text-gray-900 mb-4 text-center">
-          {t('quick_tracking_qr')}
+          Quick Tracking QR Code
         </h3>
         
         <div ref={qrRef} className="flex justify-center mb-4">
@@ -170,7 +170,7 @@ export default function ComplaintSuccess({
         </div>
 
         <p className="text-sm text-gray-500 text-center mb-4">
-          {t('scan_qr_to_track')}
+          Scan this QR code anytime to check status
         </p>
 
         <div className="flex gap-2">
@@ -179,14 +179,14 @@ export default function ComplaintSuccess({
             className="flex-1 py-2 px-3 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-2"
           >
             <ArrowDownTrayIcon className="w-4 h-4" />
-            {t('save_qr')}
+            Save QR
           </button>
           <button
             onClick={shareComplaint}
             className="flex-1 py-2 px-3 border border-gray-200 rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-2"
           >
             <ShareIcon className="w-4 h-4" />
-            {t('share')}
+            Share
           </button>
         </div>
       </motion.div>
@@ -202,14 +202,14 @@ export default function ComplaintSuccess({
           onClick={onNewComplaint}
           className="w-full py-3 border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition"
         >
-          {t('submit_another_complaint')}
+          Submit Another Complaint
         </button>
         <button
           onClick={() => navigate('/')}
           className="w-full py-3 flex items-center justify-center gap-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition"
         >
           <HomeIcon className="w-5 h-5" />
-          {t('go_to_home', 'Go to Home')}
+          Go to Home
         </button>
       </motion.div>
     </motion.div>

@@ -29,6 +29,15 @@ exports.login = async (req, res) => {
     }
 
     const admin = await Admin.findByCredentials(email, password);
+
+    // Only super_admin and admin roles can use the admin login
+    if (!['super_admin', 'admin'].includes(admin.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'This login is for administrators only. Please use the Official Portal.',
+      });
+    }
+
     const token = generateToken(admin);
 
     await AuditLog.log('admin_login', {

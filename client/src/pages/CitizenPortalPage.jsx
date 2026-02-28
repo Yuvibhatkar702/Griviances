@@ -24,6 +24,14 @@ export default function CitizenPortalPage() {
   const [stats, setStats] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
 
+  // Restore citizen session from localStorage on mount
+  useEffect(() => {
+    const savedToken = localStorage.getItem('citizenToken');
+    if (savedToken && !token) {
+      setToken(savedToken);
+    }
+  }, []);
+
   useEffect(() => {
     if (token && !isLoggedIn) {
       fetchProfile(token);
@@ -383,7 +391,7 @@ export default function CitizenPortalPage() {
                   : 'bg-white text-gray-600 hover:bg-gray-100'
               }`}
             >
-              {tab === 'all' ? 'All' : t(`status.${tab}`)}
+              {tab === 'all' ? 'All' : tab.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
             </button>
           ))}
         </div>
@@ -455,6 +463,7 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -465,6 +474,9 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
     }
   };
 
+  const rawPath = complaint.image?.filePath || '';
+  const imgSrc = rawPath ? `/${rawPath.replace(/\\/g, '/')}` : null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -472,71 +484,51 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
       className="bg-white rounded-xl shadow-sm border overflow-hidden"
     >
       <div className="p-5">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h3 className="font-semibold text-gray-900">
-              {t(`categories.${complaint.category}`)}
-            </h3>
-            <p className="text-sm text-gray-500">
-              {complaint.complaintId} • {new Date(complaint.createdAt).toLocaleDateString()}
-            </p>
+        {/* Header row: ID + Status + Date/Time + Track link */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm font-bold text-gray-900">{complaint.complaintId}</span>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(complaint.status)}`}>
+              {complaint.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+            </span>
           </div>
-          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(complaint.status)}`}>
-            {t(`status.${complaint.status}`)}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400">
+              {new Date(complaint.createdAt).toLocaleDateString()} {new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <Link
+              to={`/track/${complaint.complaintId}`}
+              className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition font-medium"
+            >
+              Track Complaint
+            </Link>
+          </div>
         </div>
 
-        {complaint.description && (
-          <p className="text-gray-600 text-sm mb-3">{complaint.description}</p>
-        )}
-
-        {complaint.address?.fullAddress && (
-          <p className="text-gray-500 text-xs flex items-center gap-1 mb-3">
-            <span>📍</span> {complaint.address.fullAddress}
-          </p>
-        )}
-
-        {/* Complaint Image */}
-        {complaint.image?.url && (
-          <div className="mb-3 rounded-lg overflow-hidden">
+        {/* Content: Image + Details */}
+        <div className="flex gap-4">
+          {imgSrc ? (
             <img
-              src={complaint.image.url}
+              src={imgSrc}
               alt="Complaint"
-              className="w-full h-40 object-cover rounded-lg"
-              loading="lazy"
+              className="w-24 h-24 rounded-lg object-cover cursor-pointer border flex-shrink-0 hover:opacity-80 transition"
+              onClick={() => setImagePreview(imgSrc)}
+              onError={(e) => { e.target.style.display = 'none'; }}
             />
-          </div>
-        )}
-
-        {/* Multiple Images */}
-        {complaint.images?.length > 0 && !complaint.image?.url && (
-          <div className="mb-3 flex gap-2 overflow-x-auto">
-            {complaint.images.slice(0, 3).map((img, idx) => (
-              <img
-                key={idx}
-                src={img.url}
-                alt={`Complaint ${idx + 1}`}
-                className="w-28 h-20 object-cover rounded-lg flex-shrink-0"
-                loading="lazy"
-              />
-            ))}
-            {complaint.images.length > 3 && (
-              <div className="w-28 h-20 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-sm text-gray-500">
-                +{complaint.images.length - 3} more
-              </div>
+          ) : (
+            <div className="w-24 h-24 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-gray-300 text-xs border">No image</div>
+          )}
+          <div className="flex-1 min-w-0 space-y-1">
+            <p className="text-sm text-gray-800"><span className="font-semibold">Category:</span> {complaint.category}</p>
+            <p className="text-sm text-gray-800"><span className="font-semibold">Status:</span> {complaint.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>
+            {complaint.description && (
+              <p className="text-sm text-gray-600"><span className="font-semibold text-gray-800">Description:</span> {complaint.description}</p>
+            )}
+            {complaint.address?.fullAddress && (
+              <p className="text-sm text-gray-500"><span className="font-semibold text-gray-700">Address:</span> {complaint.address.fullAddress}</p>
             )}
           </div>
-        )}
-
-        {/* AI Classification */}
-        {complaint.aiClassification?.category && (
-          <div className="flex items-center gap-2 text-xs text-gray-400 mb-2">
-            <span>🤖 AI: {complaint.aiClassification.category}</span>
-            {complaint.aiClassification.confidence && (
-              <span>({Math.round(complaint.aiClassification.confidence * 100)}%)</span>
-            )}
-          </div>
-        )}
+        </div>
 
         {/* Status Timeline */}
         {complaint.statusHistory && complaint.statusHistory.length > 1 && (
@@ -550,7 +542,7 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
                     history.status === 'in_progress' ? 'bg-blue-500' :
                     'bg-yellow-500'
                   }`} />
-                  <span className="text-gray-600">{t(`status.${history.status}`)}</span>
+                  <span className="text-gray-600">{history.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
                   <span className="text-gray-400">
                     {new Date(history.changedAt).toLocaleString()}
                   </span>
@@ -634,17 +626,12 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
         )}
       </div>
 
-      <div className="bg-gray-50 px-5 py-3 flex justify-between items-center">
-        <Link
-          to={`/track/${complaint.complaintId}`}
-          className="text-primary-600 text-sm font-medium hover:underline"
-        >
-          View Details
-        </Link>
-        {complaint.upvoteCount > 0 && (
-          <span className="text-sm text-gray-500">👍 {complaint.upvoteCount} supporters</span>
-        )}
-      </div>
+      {/* Image Preview Modal */}
+      {imagePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setImagePreview(null)}>
+          <img src={imagePreview} alt="Preview" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl" />
+        </div>
+      )}
     </motion.div>
   );
 }

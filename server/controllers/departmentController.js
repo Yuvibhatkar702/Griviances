@@ -92,10 +92,29 @@ exports.deleteDepartment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Department not found' });
     }
 
-    department.isActive = false;
-    await department.save();
+    // Check if department has associated complaints
+    const Complaint = require('../models/Complaint');
+    const complaintCount = await Complaint.countDocuments({ department: department.code });
+    if (complaintCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete: this department has ${complaintCount} complaint(s). Reassign or resolve them first.`,
+      });
+    }
 
-    res.json({ success: true, message: 'Department deactivated' });
+    // Check if department has assigned officials
+    const Admin = require('../models/Admin');
+    const officialCount = await Admin.countDocuments({ departmentCode: department.code, isActive: true });
+    if (officialCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete: this department has ${officialCount} active official(s). Remove them first.`,
+      });
+    }
+
+    await Department.findByIdAndDelete(req.params.id);
+
+    res.json({ success: true, message: `Department "${department.name}" has been permanently deleted` });
   } catch (error) {
     console.error('Delete department error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete department' });

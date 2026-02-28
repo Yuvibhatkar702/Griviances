@@ -234,7 +234,7 @@ exports.getMyComplaints = async (req, res) => {
     if (status) query.status = status;
 
     const complaints = await Complaint.find(query)
-      .select('-image.filePath -images.filePath -voiceNote.filePath')
+      .select('-voiceNote.filePath')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));

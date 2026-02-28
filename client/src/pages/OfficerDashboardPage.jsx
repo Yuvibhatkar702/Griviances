@@ -66,12 +66,6 @@ export default function OfficerDashboardPage() {
   const [actionLoading, setActionLoading] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
-  useEffect(() => {
-    if (!isAuthenticated || official?.role !== 'officer') {
-      navigate('/official-login');
-    }
-  }, [isAuthenticated, official, navigate]);
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {

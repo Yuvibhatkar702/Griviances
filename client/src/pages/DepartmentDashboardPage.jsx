@@ -67,12 +67,6 @@ export default function DepartmentDashboardPage() {
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [selectedOfficer, setSelectedOfficer] = useState('');
 
-  useEffect(() => {
-    if (!isAuthenticated || official?.role !== 'department_head') {
-      navigate('/official-login');
-    }
-  }, [isAuthenticated, official, navigate]);
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {

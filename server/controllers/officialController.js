@@ -137,6 +137,15 @@ exports.officialLogin = async (req, res) => {
     }
 
     const official = await Admin.findByCredentials(email, password);
+
+    // Only department_head and officer roles can use the official login
+    if (!['department_head', 'officer'].includes(official.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'This login is for department officials only. Please use the Admin login.',
+      });
+    }
+
     const token = generateToken(official);
 
     await AuditLog.log('official_login', {
@@ -559,5 +568,43 @@ exports.getOfficerStats = async (req, res) => {
   } catch (error) {
     console.error('Officer stats error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+};
+
+/**
+ * Delete (deactivate) an official by ID
+ */
+exports.deleteOfficial = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Prevent self-deletion
+    if (id === req.admin._id.toString()) {
+      return res.status(400).json({ success: false, message: 'Cannot delete your own account' });
+    }
+
+    const official = await Admin.findById(id);
+    if (!official) {
+      return res.status(404).json({ success: false, message: 'Official not found' });
+    }
+
+    // Check if official has any associated complaints
+    const Complaint = require('../models/Complaint');
+    const complaintCount = await Complaint.countDocuments({
+      $or: [{ assignedTo: id }, { assignedBy: id }],
+    });
+    if (complaintCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete: this official has ${complaintCount} associated complaint(s). Reassign or resolve them first.`,
+      });
+    }
+
+    await Admin.findByIdAndDelete(id);
+
+    res.json({ success: true, message: `${official.name} has been permanently deleted` });
+  } catch (error) {
+    console.error('Delete official error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete official' });
   }
 };
