@@ -64,6 +64,7 @@ export default function DepartmentDashboardPage() {
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [selectedOfficer, setSelectedOfficer] = useState('');
+  const [detailComplaint, setDetailComplaint] = useState(null);
 
   // Verify session is valid on mount
   useEffect(() => {
@@ -94,7 +95,15 @@ export default function DepartmentDashboardPage() {
       ]);
       if (statsRes.success) setStats(statsRes.data);
       if (complaintsRes.success) {
-        setComplaints(complaintsRes.data);
+        // Sort: pending (unassigned) first, then assigned/in_progress, then closed
+        const statusOrder = { pending: 0, reopened: 1, assigned: 2, in_progress: 3, closed: 4, rejected: 5 };
+        const sorted = [...complaintsRes.data].sort((a, b) => {
+          const oa = statusOrder[a.status] ?? 9;
+          const ob = statusOrder[b.status] ?? 9;
+          if (oa !== ob) return oa - ob;
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+        setComplaints(sorted);
         setPagination(complaintsRes.pagination);
       }
       if (officersRes.success) setOfficers(officersRes.data);
@@ -167,65 +176,6 @@ export default function DepartmentDashboardPage() {
           </div>
         )}
 
-        {/* Officers */}
-        <div className="bg-white rounded-xl shadow-sm p-5">
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">Officers ({officers.length})</h2>
-          <div className="flex flex-wrap gap-3">
-            {officers.map((o) => {
-              // Find rating from stats if available
-              const ratingInfo = stats?.officerRatings?.find(r => r.officerId === o._id);
-              return (
-                <div key={o._id} className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
-                  <div className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center text-blue-700 font-bold text-sm">
-                    {o.name?.[0]?.toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{o.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {o.email}
-                      {ratingInfo && (
-                        <span className="ml-1 text-yellow-600 font-medium">⭐ {ratingInfo.avgRating} ({ratingInfo.totalRatings})</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-            {officers.length === 0 && <p className="text-sm text-gray-400">No officers assigned yet</p>}
-          </div>
-        </div>
-
-        {/* Officer Ratings Leaderboard */}
-        {stats?.officerRatings && stats.officerRatings.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-5">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Officer Ratings Leaderboard</h2>
-            <div className="space-y-3">
-              {stats.officerRatings.map((officer, index) => (
-                <div key={officer.officerId} className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                    index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-blue-400'
-                  }`}>
-                    {index + 1}
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">{officer.name}</p>
-                    <p className="text-xs text-gray-500">{officer.email}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-0.5">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <span key={star} className={`text-sm ${star <= Math.round(officer.avgRating) ? 'text-yellow-400' : 'text-gray-300'}`}>★</span>
-                      ))}
-                    </div>
-                    <span className="text-sm font-bold text-gray-900">{officer.avgRating}</span>
-                    <span className="text-xs text-gray-500">({officer.totalRatings})</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Filters */}
         <div className="flex items-center gap-3">
           <label className="text-sm font-medium text-gray-600">Filter:</label>
@@ -283,12 +233,28 @@ export default function DepartmentDashboardPage() {
                       <span className="text-xs text-gray-400">
                         {new Date(c.createdAt).toLocaleDateString()} {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
-                      {['pending', 'assigned'].includes(c.status) && (
+                      {c.status === 'pending' && !c.assignedTo && (
                         <button
                           onClick={() => { setSelectedComplaint(c); setAssignModalOpen(true); }}
                           className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition font-medium"
                         >
                           Assign
+                        </button>
+                      )}
+                      {c.assignedTo && (
+                        <button
+                          disabled
+                          className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-medium opacity-80 cursor-not-allowed"
+                        >
+                          ✓ Assigned
+                        </button>
+                      )}
+                      {c.status === 'closed' && (
+                        <button
+                          onClick={() => setDetailComplaint(c)}
+                          className="px-3 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 transition font-medium"
+                        >
+                          View Details
                         </button>
                       )}
                     </div>
@@ -368,7 +334,292 @@ export default function DepartmentDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Officers */}
+        <div className="bg-white rounded-xl shadow-sm p-5">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Officers ({officers.length})</h2>
+          <div className="flex flex-wrap gap-3">
+            {officers.map((o) => {
+              const ratingInfo = stats?.officerRatings?.find(r => r.officerId === o._id);
+              return (
+                <div key={o._id} className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+                  <div className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center text-blue-700 font-bold text-sm">
+                    {o.name?.[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">{o.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {o.designation || 'Officer'}
+                      {ratingInfo && (
+                        <span className="ml-1 text-yellow-600 font-medium">⭐ {ratingInfo.avgRating} ({ratingInfo.totalRatings})</span>
+                      )}
+                    </p>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                    (o.activeComplaints || 0) === 0
+                      ? 'bg-green-100 text-green-700'
+                      : (o.activeComplaints || 0) >= 3
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {o.activeComplaints || 0}
+                  </span>
+                </div>
+              );
+            })}
+            {officers.length === 0 && <p className="text-sm text-gray-400">No officers assigned yet</p>}
+          </div>
+        </div>
+
+        {/* Officer Ratings Leaderboard */}
+        {stats?.officerRatings && stats.officerRatings.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-5">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Officer Ratings Leaderboard</h2>
+            <div className="space-y-3">
+              {stats.officerRatings.map((officer, index) => (
+                <div key={officer.officerId} className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                    index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-blue-400'
+                  }`}>
+                    {index + 1}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">{officer.name}</p>
+                    <p className="text-xs text-gray-500">{officer.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <span key={star} className={`text-sm ${star <= Math.round(officer.avgRating) ? 'text-yellow-400' : 'text-gray-300'}`}>★</span>
+                      ))}
+                    </div>
+                    <span className="text-sm font-bold text-gray-900">{officer.avgRating}</span>
+                    <span className="text-xs text-gray-500">({officer.totalRatings})</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* Complaint Detail Modal */}
+      {detailComplaint && (() => {
+        const d = detailComplaint;
+        const dImgPath = d.image?.filePath || d.images?.[0]?.filePath || '';
+        const dImgSrc = dImgPath ? `${API_BASE}/${dImgPath.replace(/\\/g, '/')}` : null;
+        const resolvedTime = d.closedAt || d.resolvedAt || d.resolution?.resolvedAt
+          || d.statusHistory?.slice().reverse().find(h => h.status === 'closed')?.changedAt;
+        const createdTime = new Date(d.createdAt);
+        const assignedTime = d.assignedAt ? new Date(d.assignedAt) : createdTime;
+        const resolvedDate = resolvedTime ? new Date(resolvedTime) : null;
+        // Total time: from complaint filed to closed
+        const totalMinutes = resolvedDate ? Math.max(0, Math.round((resolvedDate - createdTime) / (1000 * 60))) : null;
+        const totalTimeStr = totalMinutes !== null
+          ? (totalMinutes >= 1440
+            ? `${Math.floor(totalMinutes / 1440)}d ${Math.floor((totalMinutes % 1440) / 60)}h`
+            : totalMinutes >= 60
+              ? `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`
+              : `${totalMinutes}m`)
+          : '—';
+        // Officer turnaround: from assigned to closed
+        const officerMinutes = resolvedDate && d.assignedAt ? Math.max(0, Math.round((resolvedDate - assignedTime) / (1000 * 60))) : null;
+        const officerTimeStr = officerMinutes !== null
+          ? (officerMinutes >= 1440
+            ? `${Math.floor(officerMinutes / 1440)}d ${Math.floor((officerMinutes % 1440) / 60)}h`
+            : officerMinutes >= 60
+              ? `${Math.floor(officerMinutes / 60)}h ${officerMinutes % 60}m`
+              : `${officerMinutes}m`)
+          : null;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDetailComplaint(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Complaint Details</h3>
+                  <p className="text-sm text-gray-500 font-mono">{d.complaintId}</p>
+                </div>
+                <button onClick={() => setDetailComplaint(null)} className="p-2 hover:bg-gray-100 rounded-lg transition text-gray-400 hover:text-gray-600">
+                  ✕
+                </button>
+              </div>
+
+              {/* Status Badge */}
+              <div className="mb-4">
+                <StatusBadge status={d.status} />
+                {d.priority && (
+                  <span className={`ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    d.priority === 'critical' ? 'bg-red-100 text-red-800' :
+                    d.priority === 'high' ? 'bg-orange-100 text-orange-800' :
+                    d.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'
+                  }`}>{d.priority}</span>
+                )}
+              </div>
+
+              {/* Complaint Image */}
+              {dImgSrc && (
+                <img src={dImgSrc} alt="complaint" className="w-full h-48 object-cover rounded-xl mb-4 cursor-pointer hover:opacity-90 transition" onClick={() => setImagePreview(dImgSrc)} onError={(e) => { e.target.style.display = 'none'; }} />
+              )}
+
+              {/* Basic Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 mb-1">Category</p>
+                  <p className="text-sm font-semibold text-gray-900">{d.category || '—'}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 mb-1">Complainant</p>
+                  <p className="text-sm font-semibold text-gray-900">{d.user?.name || d.user?.phoneNumber || '—'}</p>
+                  {d.user?.name && d.user?.phoneNumber && (
+                    <p className="text-xs text-gray-500">📞 {d.user.phoneNumber}</p>
+                  )}
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 mb-1">Filed On</p>
+                  <p className="text-sm font-semibold text-gray-900">{createdTime.toLocaleDateString()} {createdTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs text-gray-500 mb-1">Address</p>
+                  <p className="text-sm font-medium text-gray-800 truncate">{d.address?.fullAddress || '—'}</p>
+                </div>
+              </div>
+
+              {d.description && (
+                <div className="bg-gray-50 rounded-xl p-3 mb-4">
+                  <p className="text-xs text-gray-500 mb-1">Description</p>
+                  <p className="text-sm text-gray-800">{d.description}</p>
+                </div>
+              )}
+
+              {/* Officer & Time Info */}
+              <div className="border-t pt-4 mb-4">
+                <h4 className="text-sm font-bold text-gray-900 mb-3">📋 Resolution Summary</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                    <p className="text-xs text-blue-600 mb-1">Assigned Officer</p>
+                    <p className="text-sm font-bold text-blue-900">{d.assignedTo?.name || '—'}</p>
+                    {d.assignedTo?.email && <p className="text-xs text-blue-600">{d.assignedTo.email}</p>}
+                    {d.assignedTo?.phone && <p className="text-xs text-blue-600">{d.assignedTo.phone}</p>}
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-3 border border-green-100">
+                    <p className="text-xs text-green-600 mb-1">Resolved On</p>
+                    <p className="text-sm font-bold text-green-900">
+                      {resolvedDate ? `${resolvedDate.toLocaleDateString()} ${resolvedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '—'}
+                    </p>
+                  </div>
+                  <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
+                    <p className="text-xs text-indigo-600 mb-1">Estimated Time (SLA)</p>
+                    <p className="text-sm font-bold text-indigo-900">{d.estimatedResolution || `${d.resolutionDays || 5} days`}</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
+                    <p className="text-xs text-purple-600 mb-1">Actual Time Taken</p>
+                    <p className="text-sm font-bold text-purple-900">{totalTimeStr}</p>
+                    {officerTimeStr && (
+                      <p className="text-xs text-purple-500 mt-0.5">Officer: {officerTimeStr}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Resolution Remarks & Proof */}
+              {d.resolution?.description && (
+                <div className="bg-green-50 rounded-xl p-3 border border-green-100 mb-4">
+                  <p className="text-xs text-green-700 font-semibold mb-1">Officer's Remarks</p>
+                  <p className="text-sm text-green-900">{d.resolution.description}</p>
+                </div>
+              )}
+
+              {d.resolutionProof && d.resolutionProof.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-green-700 mb-2">📷 Resolution Proof ({d.resolutionProof.length})</p>
+                  <div className="flex flex-wrap gap-2">
+                    {d.resolutionProof.map((p, i) => {
+                      const pSrc = `${API_BASE}/${(p.filePath || '').replace(/\\/g, '/')}`;
+                      return (
+                        <img key={i} src={pSrc} alt={`Proof ${i + 1}`}
+                          className="w-20 h-20 rounded-lg object-cover cursor-pointer border hover:opacity-80 transition"
+                          onClick={() => setImagePreview(pSrc)}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Reopen Info */}
+              {d.reopenCount > 0 && (
+                <div className="border-t pt-4 mb-4">
+                  <h4 className="text-sm font-bold text-red-700 mb-3">🔄 Reopen Information</h4>
+                  <div className="bg-red-50 rounded-xl p-3 border border-red-100 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-red-600">Times Reopened:</span>
+                      <span className="text-sm font-bold text-red-900">{d.reopenCount}</span>
+                    </div>
+                    {d.reopenedAt && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-red-600">Last Reopened:</span>
+                        <span className="text-sm font-semibold text-red-900">
+                          {new Date(d.reopenedAt).toLocaleDateString()} {new Date(d.reopenedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    )}
+                    {d.reopenReason && (
+                      <div>
+                        <span className="text-xs text-red-600">Reason:</span>
+                        <p className="text-sm text-red-900 mt-0.5">{d.reopenReason}</p>
+                      </div>
+                    )}
+                    {d.reopenProof && d.reopenProof.length > 0 && (
+                      <div>
+                        <p className="text-xs text-red-600 mb-1">Reopen Proof:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {d.reopenProof.map((p, i) => {
+                            const rpSrc = `${API_BASE}/${(p.filePath || '').replace(/\\/g, '/')}`;
+                            return (
+                              <img key={i} src={rpSrc} alt={`Reopen ${i + 1}`}
+                                className="w-16 h-16 rounded-lg object-cover cursor-pointer border hover:opacity-80 transition"
+                                onClick={() => setImagePreview(rpSrc)}
+                                onError={(e) => { e.target.style.display = 'none'; }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Status History / Timeline */}
+              {d.statusHistory && d.statusHistory.length > 0 && (
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-bold text-gray-900 mb-3">📜 Status Timeline</h4>
+                  <div className="space-y-2">
+                    {d.statusHistory.map((h, i) => (
+                      <div key={i} className="flex items-start gap-3">
+                        <div className="mt-1 w-2.5 h-2.5 rounded-full bg-blue-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {h.status?.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {h.changedAt ? `${new Date(h.changedAt).toLocaleDateString()} ${new Date(h.changedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                            {h.changedBy?.name ? ` — by ${h.changedBy.name}` : ''}
+                          </p>
+                          {h.remarks && <p className="text-xs text-gray-400 mt-0.5">{h.remarks}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Assign Modal */}
       {assignModalOpen && (
@@ -384,7 +635,9 @@ export default function DepartmentDashboardPage() {
             >
               <option value="">Select officer…</option>
               {officers.map((o) => (
-                <option key={o._id} value={o._id}>{o.name} ({o.email})</option>
+                <option key={o._id} value={o._id}>
+                  {o.name} — {o.designation || 'Officer'} ({o.activeComplaints || 0} active)
+                </option>
               ))}
             </select>
 

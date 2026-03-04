@@ -189,9 +189,24 @@ exports.getDepartmentOfficers = async (req, res) => {
       role: 'officer',
       $or: [{ departmentCode: deptCode }, { department: deptCode }],
       isActive: true,
-    }).select('name email phone role departmentCode');
+    }).select('name email phone role departmentCode designation');
 
-    res.json({ success: true, data: officers });
+    // Count active (non-closed/rejected) complaints per officer
+    const activeStatuses = ['assigned', 'in_progress', 'reopened'];
+    const counts = await Complaint.aggregate([
+      { $match: { department: deptCode, status: { $in: activeStatuses }, assignedTo: { $ne: null } } },
+      { $group: { _id: '$assignedTo', count: { $sum: 1 } } },
+    ]);
+    const countMap = {};
+    counts.forEach((c) => { countMap[c._id.toString()] = c.count; });
+
+    const enriched = officers.map((o) => {
+      const obj = o.toObject();
+      obj.activeComplaints = countMap[o._id.toString()] || 0;
+      return obj;
+    });
+
+    res.json({ success: true, data: enriched });
   } catch (error) {
     console.error('Get officers error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch officers' });

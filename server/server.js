@@ -161,13 +161,32 @@ async function autoSeedDepartments(Department, Admin, CategoryMapping) {
         { supportedCategories: { $size: 0 } },
       ],
     });
+    // Also check: completely empty DB (no departments or no heads at all)
+    const deptCount = await Department.countDocuments();
+    const headCount = await Admin.countDocuments({ role: 'department_head' });
 
-    if (!genericHead && !emptyDept) {
+    // Also check: broken passwords (double-hashed from previous bug)
+    let passwordBroken = false;
+    if (headCount > 0) {
+      const bcrypt = require('bcryptjs');
+      const anyHead = await Admin.findOne({ role: 'department_head' });
+      if (anyHead) {
+        const canLogin = await bcrypt.compare('Pass@123', anyHead.password);
+        if (!canLogin) {
+          passwordBroken = true;
+          console.log('⚠️  Officer/head passwords appear broken — will re-seed');
+        }
+      }
+    }
+
+    const needsSeed = genericHead || emptyDept || deptCount === 0 || headCount === 0 || passwordBroken;
+
+    if (!needsSeed) {
       console.log('✅ Departments & officials already seeded correctly');
       return;
     }
 
-    console.log('🔄 Stale/generic department data detected — re-seeding…');
+    console.log('🔄 Stale/missing department data detected — re-seeding…');
 
     const DEFAULT_PASSWORD = 'Pass@123';
     const HEAD_PERMISSIONS = {
