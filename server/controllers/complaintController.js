@@ -451,6 +451,8 @@ exports.getAllComplaints = async (req, res) => {
       limit = 20,
       status,
       category,
+      department,
+      priority,
       startDate,
       endDate,
       search,
@@ -467,6 +469,14 @@ exports.getAllComplaints = async (req, res) => {
 
     if (category) {
       query.category = category;
+    }
+
+    if (department) {
+      query.department = department;
+    }
+
+    if (priority) {
+      query.priority = priority;
     }
 
     if (startDate || endDate) {

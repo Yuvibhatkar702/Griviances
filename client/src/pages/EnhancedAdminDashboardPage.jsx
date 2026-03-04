@@ -167,11 +167,19 @@ function StatCard({ icon: Icon, label, value, trend, color = 'primary', onClick 
 }
 
 // Filter Panel
-function FilterPanel({ filters, onChange, onClear, categories, statuses, priorities }) {
+function FilterPanel({ filters, onChange, onClear, categories, statuses, priorities, departments }) {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const activeFilterCount = Object.values(filters).filter(v => v !== '').length;
+
+  // Filter categories based on selected department
+  const filteredCategories = useMemo(() => {
+    if (!filters.department) return categories;
+    const dept = departments.find(d => d.code === filters.department);
+    if (!dept) return categories;
+    return (dept.supportedCategories || []).map(sc => sc.name).sort();
+  }, [filters.department, departments, categories]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -212,12 +220,23 @@ function FilterPanel({ filters, onChange, onClear, categories, statuses, priorit
               </select>
 
               <select
+                value={filters.department}
+                onChange={(e) => onChange('department', e.target.value)}
+                className="text-sm rounded-lg"
+              >
+                <option value="">All Departments</option>
+                {departments.map(d => (
+                  <option key={d.code} value={d.code}>{d.name}</option>
+                ))}
+              </select>
+
+              <select
                 value={filters.category}
                 onChange={(e) => onChange('category', e.target.value)}
                 className="text-sm rounded-lg"
               >
                 <option value="">{t('all_categories')}</option>
-                {categories.map(c => (
+                {filteredCategories.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -231,17 +250,6 @@ function FilterPanel({ filters, onChange, onClear, categories, statuses, priorit
                 {priorities.map(p => (
                   <option key={p} value={p}>{p}</option>
                 ))}
-              </select>
-
-              <select
-                value={filters.sla}
-                onChange={(e) => onChange('sla', e.target.value)}
-                className="text-sm rounded-lg"
-              >
-                <option value="">{t('all_sla')}</option>
-                <option value="overdue">{t('overdue')}</option>
-                <option value="urgent">{t('urgent')}</option>
-                <option value="on_track">{t('on_track')}</option>
               </select>
 
               <input
@@ -837,9 +845,9 @@ export default function EnhancedAdminDashboardPage() {
   const [view, setView] = useState('table');
   const [filters, setFilters] = useState({
     status: '',
+    department: '',
     category: '',
     priority: '',
-    sla: '',
     startDate: '',
     endDate: '',
   });
@@ -965,9 +973,9 @@ export default function EnhancedAdminDashboardPage() {
   const handleClearFilters = () => {
     setFilters({
       status: '',
+      department: '',
       category: '',
       priority: '',
-      sla: '',
       startDate: '',
       endDate: '',
     });
@@ -1169,6 +1177,7 @@ export default function EnhancedAdminDashboardPage() {
           categories={categories}
           statuses={statuses}
           priorities={priorities}
+          departments={dashDepartments}
         />
 
         {/* Content */}
