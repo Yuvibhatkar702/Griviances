@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -884,6 +884,7 @@ function SubmitComplaintContent() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { sessionId } = useParams();
+  const [searchParams] = useSearchParams();
   const { addToast } = useToastStore();
   const { language } = useSettingsStore();
   const { isOnline } = useConnectivity();
@@ -900,9 +901,17 @@ function SubmitComplaintContent() {
   const [estimatedResolution, setEstimatedResolution] = useState(null);
   const [confirmNotDuplicate, setConfirmNotDuplicate] = useState(false);
 
-  // ── Phone verification state
+  // ── Phone verification state (pre-fill from ?phone= query param)
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneVerified, setPhoneVerified] = useState(false);
+
+  // Pre-fill phone from URL ?phone=XXXXXXXXXX
+  useEffect(() => {
+    const p = searchParams.get('phone');
+    if (p && !phoneNumber) {
+      setPhoneNumber(p.replace(/\D/g, '').slice(0, 10));
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Form data
   const [image, setImage] = useState(null);
