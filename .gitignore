@@ -67,11 +67,6 @@ desktop.ini
 server/uploads/*
 !server/uploads/.gitkeep
 
-# AI model weights (large binary files)
-ai_model/weights/*.pt
-ai_model/weights/*.pth
-ai_model/weights/*.bin
-
 # Debug
 .debug/
 
