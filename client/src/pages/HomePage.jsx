@@ -32,12 +32,6 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-3">
             <LanguageSelector />
-            <Link
-              to="/admin/login"
-              className="text-white/80 hover:text-white text-sm font-medium"
-            >
-              {t('nav_admin')}
-            </Link>
           </div>
         </div>
       </header>
@@ -77,18 +71,18 @@ export default function HomePage() {
           {/* Secondary Links */}
           <div className="flex flex-wrap justify-center gap-4 mb-16">
             <Link
-              to="/community"
-              className="text-white/80 hover:text-white text-sm font-medium flex items-center gap-2 hover:bg-white/10 px-4 py-2 rounded-lg transition-colors"
-            >
-              <span>👥</span>
-              Community Feed
-            </Link>
-            <Link
               to="/citizen"
               className="text-white/80 hover:text-white text-sm font-medium flex items-center gap-2 hover:bg-white/10 px-4 py-2 rounded-lg transition-colors"
             >
               <span>🔐</span>
               Citizen Portal
+            </Link>
+            <Link
+              to="/official-login"
+              className="text-white/80 hover:text-white text-sm font-medium flex items-center gap-2 hover:bg-white/10 px-4 py-2 rounded-lg transition-colors"
+            >
+              <span>🏢</span>
+              Official Login
             </Link>
           </div>
 

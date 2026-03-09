@@ -99,7 +99,7 @@ const complaintSchema = new mongoose.Schema({
   // Status Tracking
   status: {
     type: String,
-    enum: ['pending', 'in_progress', 'resolved', 'rejected', 'duplicate'],
+    enum: ['pending', 'assigned', 'in_progress', 'reopened', 'closed', 'rejected', 'duplicate'],
     default: 'pending',
     index: true,
   },
@@ -107,7 +107,7 @@ const complaintSchema = new mongoose.Schema({
   statusHistory: [{
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'resolved', 'rejected', 'duplicate'],
+      enum: ['pending', 'assigned', 'in_progress', 'reopened', 'closed', 'rejected', 'duplicate'],
     },
     changedAt: {
       type: Date,
@@ -145,6 +145,89 @@ const complaintSchema = new mongoose.Schema({
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Admin',
+  },
+
+  // Department assignment (auto-routed from category)
+  department: {
+    type: String,
+    trim: true,
+    index: true,
+  },
+
+  // Department snapshot (preserved even if departments are reorganised)
+  departmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+  },
+
+  departmentName: {
+    type: String,
+    trim: true,
+  },
+
+  // Who assigned the officer (department_head)
+  assignedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+  },
+
+  // Workflow timestamps
+  assignedAt: Date,
+  startedAt: Date,
+  resolvedAt: Date,
+  closedAt: Date,
+
+  // Resolution proof images (uploaded by officer)
+  resolutionProof: [{
+    fileName: String,
+    filePath: String,
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  }],
+
+  // Reopen tracking
+  reopenReason: String,
+  reopenedAt: Date,
+  reopenCount: {
+    type: Number,
+    default: 0,
+  },
+  reopenProof: [{
+    fileName: String,
+    filePath: String,
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  }],
+
+  // Officer rating (given by citizen after resolution)
+  officerRating: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
+    },
+    comment: String,
+    submittedAt: Date,
+  },
+  
+  // Estimated Resolution Time (dynamic per category)
+  estimatedResolution: {
+    type: String,
+    default: '3-5 working days',
+  },
+  
+  // Resolution countdown fields
+  resolutionDays: {
+    type: Number,
+    default: 5,
+  },
+  
+  expectedResolveAt: {
+    type: Date,
   },
   
   // Resolution Details
@@ -311,19 +394,19 @@ complaintSchema.index({
   'address.fullAddress': 'text',
 });
 
-// Generate unique complaint ID
+// Generate unique complaint ID (resets yearly)
 complaintSchema.statics.generateComplaintId = async function() {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const day = date.getDate().toString().padStart(2, '0');
   
-  // Find the count of complaints today
-  const startOfDay = new Date(date.setHours(0, 0, 0, 0));
-  const endOfDay = new Date(date.setHours(23, 59, 59, 999));
+  // Find the count of complaints this year (counter resets each year)
+  const startOfYear = new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0);
+  const endOfYear = new Date(date.getFullYear(), 11, 31, 23, 59, 59, 999);
   
   const count = await this.countDocuments({
-    createdAt: { $gte: startOfDay, $lte: endOfDay }
+    createdAt: { $gte: startOfYear, $lte: endOfYear }
   });
   
   const sequence = (count + 1).toString().padStart(4, '0');

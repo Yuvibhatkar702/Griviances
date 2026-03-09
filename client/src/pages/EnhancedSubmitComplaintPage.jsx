@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -80,11 +80,11 @@ const CATEGORY_META = {
   "Garbage and Trash Issue":   { icon: '🗑️', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Garbage and Trash Issue' },
   "Illegal Drawing on Walls":  { icon: '🎨', color: 'bg-pink-100 text-pink-700 border-pink-200', label: 'Illegal Drawing on Walls' },
   "Street Light Issue":        { icon: '💡', color: 'bg-yellow-100 text-yellow-700 border-yellow-200', label: 'Street Light Issue' },
-  "Other":                     { icon: '📋', color: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Other' },
+  "Other":             { icon: '📋', color: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Photo Invalid' },
 };
 
 // Fallback for unknown categories returned by AI
-const DEFAULT_CATEGORY_META = { icon: '📋', color: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Other' };
+const DEFAULT_CATEGORY_META = { icon: '📋', color: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Photo Invalid' };
 
 // Helper to get category info with fallback
 function getCategoryMeta(category) {
@@ -92,7 +92,7 @@ function getCategoryMeta(category) {
 }
 
 // Categories available for manual selection (excludes "Other")
-const ALL_CATEGORIES = Object.keys(CATEGORY_META).filter(cat => cat !== 'Other');
+const ALL_CATEGORIES = Object.keys(CATEGORY_META).filter(cat => cat !== 'Photo Invalid');
 
 // ─── Pencil mini-icon (avoids extra heroicons import) ─────────────────────────
 function PencilIcon() {
@@ -248,6 +248,44 @@ function PhotoUploadStep({ image, onCapture, onFileUpload, onRetake }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 2 — AI Classification
 // ─────────────────────────────────────────────────────────────────────────────
+// client/src/pages/EnhancedSubmitComplaintPage.jsx
+
+const runClassification = async () => {
+  try {
+    const result = await callClassifyAPI(imageBlob);
+    
+    setAiCategory(result.category);
+    setAiConfidence(result.confidence);
+    
+    // Show validation success
+    if (result.validation) {
+      console.log('✓ Validation passed:', result.validation.reason);
+    }
+    
+  } catch (err) {
+    if (err.response?.status === 400) {
+      // Validation failed
+      const detail = err.response.data.detail;
+      
+      setAiError(detail.message);
+      
+      // Show user-friendly message
+      Alert.alert(
+        'Invalid Image',
+        detail.message + '\n\nPlease upload a clear photo of the municipal issue.',
+        [
+          { text: 'Retake Photo', onPress: () => retakePhoto() },
+          { text: 'OK' }
+        ]
+      );
+    } else {
+      // Other errors
+      setAiError('Classification failed');
+    }
+  }
+};
+
+
 function AIClassificationStep({ image, isClassifying, aiResult, aiError, onRetry, onOverride, isOtherCategory, isCategoryManuallySet }) {
   const { t } = useTranslation();
   const [showOverride, setShowOverride] = useState(false);
@@ -468,11 +506,11 @@ function AIClassificationStep({ image, isClassifying, aiResult, aiError, onRetry
               <ExclamationTriangleIcon className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h3 className="text-sm font-semibold text-amber-900 mb-1">
-                  {t('other_category_warning_title', 'Cannot Submit - Photo Unrecognized')}
+                  {t('other_category_warning_title', 'Cannot Submit - Photo is not Valid')}
                 </h3>
                 <p className="text-sm text-amber-800 mb-3">
                   {t('other_category_warning_message', 
-                    'The AI model could not identify a specific municipal issue in this photo. Complaints in the "Other" category cannot be submitted as they cannot be routed to the appropriate department. Please upload a clearer photo showing the specific issue, or manually select the correct category if this is a valid municipal complaint.'
+                    'The AI model identified this photo as Invalid. Please upload actual photo of the issue'
                   )}
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -482,19 +520,13 @@ function AIClassificationStep({ image, isClassifying, aiResult, aiError, onRetry
                   >
                     {t('go_back_upload_new', '← Go Back & Upload New Photo')}
                   </button>
-                  <button
-                    onClick={() => setShowOverride(true)}
-                    className="flex-1 py-2 px-4 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
-                  >
-                    {t('select_category_manually', 'Select Correct Category')}
-                  </button>
                 </div>
               </div>
             </div>
           </motion.div>
         )}
 
-        {/* Success message when manually changed from "Other" */}
+        {/* Success message when manually changed from "Other"
         {isOtherCategory && isCategoryManuallySet && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -508,7 +540,7 @@ function AIClassificationStep({ image, isClassifying, aiResult, aiError, onRetry
               </p>
             </div>
           </motion.div>
-        )}
+        )} */}
 
         {/* Manual override */}
         <div>
@@ -564,6 +596,44 @@ function AIClassificationStep({ image, isClassifying, aiResult, aiError, onRetry
 // ─────────────────────────────────────────────────────────────────────────────
 function LocationDetailsStep({ location, description, onLocationUpdate, onDescriptionChange }) {
   const { t } = useTranslation();
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-IN';
+
+      recognitionRef.current.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript + ' ';
+        }
+        onDescriptionChange((prev) => (prev + ' ' + transcript).trim());
+      };
+
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
+    }
+    return () => {
+      if (recognitionRef.current) recognitionRef.current.abort();
+    };
+  }, [onDescriptionChange]);
+
+  const toggleVoice = () => {
+    if (!recognitionRef.current) return;
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -595,21 +665,43 @@ function LocationDetailsStep({ location, description, onLocationUpdate, onDescri
       {/* Description */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          {t('additional_details', 'Additional Details')}
-          <span className="text-gray-400 font-normal ml-1">({t('optional', 'optional')})</span>
+          {t('description', 'Description')}
+          <span className="text-red-500 ml-1">*</span>
         </label>
-        <textarea
-          value={description}
-          onChange={e => onDescriptionChange(e.target.value)}
-          rows={3}
-          maxLength={500}
-          placeholder={t(
-            'description_placeholder',
-            'Describe the issue in more detail… (e.g. size, duration, severity)'
-          )}
-          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-sm"
-        />
-        <p className="text-xs text-gray-400 mt-1 text-right">{description.length}/500</p>
+        <div className="relative">
+          <textarea
+            value={description}
+            onChange={e => onDescriptionChange(e.target.value)}
+            rows={3}
+            maxLength={500}
+            placeholder={t(
+              'description_placeholder',
+              'Describe the issue in more detail… (e.g. size, duration, severity)'
+            )}
+            className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-sm"
+          />
+          {/* Voice-to-text button */}
+          <button
+            type="button"
+            onClick={toggleVoice}
+            className={`absolute right-3 top-3 p-2 rounded-full transition-colors ${
+              isListening
+                ? 'bg-red-100 text-red-600 animate-pulse'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+            title={isListening ? 'Stop recording' : 'Start voice input'}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </button>
+        </div>
+        <div className="flex justify-between mt-1">
+          <p className="text-xs text-gray-400">
+            {isListening && <span className="text-red-500">🎤 Listening...</span>}
+          </p>
+          <p className="text-xs text-gray-400">{description.length}/500</p>
+        </div>
       </div>
     </div>
   );
@@ -648,12 +740,183 @@ function PreviewStep({ data, onEdit }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STEP 5 — Phone Verification
+// ─────────────────────────────────────────────────────────────────────────────
+const CITIZEN_API = `${import.meta.env.VITE_API_URL || '/api'}/citizen`;
+
+function PhoneVerifyStep({ phoneNumber, setPhoneNumber, onVerified }) {
+  const { t } = useTranslation();
+  const [step, setStep] = useState('phone'); // 'phone' | 'otp'
+  const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
+  const handleRequestOTP = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`${CITIZEN_API}/request-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStep('otp');
+        setCountdown(60);
+        // Dev mode: auto-fill and auto-verify OTP
+        if (data.otp) {
+          setOtp(data.otp);
+          // Small delay to let the OTP register on the server
+          setTimeout(async () => {
+            try {
+              const vRes = await fetch(`${CITIZEN_API}/verify-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phoneNumber, otp: data.otp }),
+              });
+              const vData = await vRes.json();
+              if (vData.success) {
+                localStorage.setItem('citizenToken', vData.data.token);
+                onVerified(phoneNumber);
+              }
+            } catch (_) { /* fallback to manual */ }
+          }, 1000);
+        }
+      } else {
+        setError(data.message || 'Failed to send OTP');
+      }
+    } catch {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`${CITIZEN_API}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber, otp }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem('citizenToken', data.data.token);
+        onVerified(phoneNumber);
+      } else {
+        setError(data.message || 'Invalid OTP');
+      }
+    } catch {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <span className="text-3xl">📱</span>
+        </div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">
+          {t('verify_phone', 'Verify Your Phone')}
+        </h2>
+        <p className="text-sm text-gray-500">
+          {step === 'phone'
+            ? t('verify_phone_desc', 'Enter your mobile number to verify and submit')
+            : t('enter_otp_desc', `Enter the OTP sent to ${phoneNumber}`)}
+        </p>
+      </div>
+
+      {step === 'phone' ? (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('phone_number', 'Phone Number')}
+              </label>
+            <input
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              maxLength={10}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent text-lg"
+            />
+          </div>
+          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          <button
+            onClick={handleRequestOTP}
+            disabled={loading || phoneNumber.length !== 10}
+            className="w-full py-4 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+          >
+            {loading ? t('sending_otp', 'Sending OTP...') : t('get_otp', 'Get OTP')}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('enter_otp', 'Enter OTP')}
+            </label>
+            <input
+              type="text"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="Enter 6-digit OTP"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent text-center text-2xl tracking-widest"
+              maxLength={6}
+            />
+          </div>
+          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          <button
+            onClick={handleVerifyOTP}
+            disabled={loading || otp.length !== 6}
+            className="w-full py-4 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
+          >
+            {loading ? t('verifying', 'Verifying...') : t('verify_continue', 'Verify & Continue')}
+          </button>
+          <div className="flex items-center justify-between text-sm">
+            <button
+              type="button"
+              onClick={() => { setStep('phone'); setOtp(''); setError(''); }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ← {t('change_number', 'Change Number')}
+            </button>
+            <button
+              type="button"
+              onClick={handleRequestOTP}
+              disabled={countdown > 0}
+              className="text-primary-600 hover:text-primary-700 disabled:text-gray-400"
+            >
+              {countdown > 0 ? `${t('resend_in', 'Resend in')} ${countdown}s` : t('resend_otp', 'Resend OTP')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN — SubmitComplaintContent
 // ─────────────────────────────────────────────────────────────────────────────
 function SubmitComplaintContent() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { sessionId } = useParams();
+  const [searchParams] = useSearchParams();
   const { addToast } = useToastStore();
   const { language } = useSettingsStore();
   const { isOnline } = useConnectivity();
@@ -667,7 +930,41 @@ function SubmitComplaintContent() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicates, setDuplicates] = useState([]);
   const [submittedComplaintId, setSubmittedComplaintId] = useState(null);
+  const [estimatedResolution, setEstimatedResolution] = useState(null);
   const [confirmNotDuplicate, setConfirmNotDuplicate] = useState(false);
+
+  // ── Phone verification state (pre-fill from ?phone= query param)
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneVerified, setPhoneVerified] = useState(false);
+
+  // Pre-fill phone from URL ?phone=XXXXXXXXXX
+  useEffect(() => {
+    const p = searchParams.get('phone');
+    if (p && !phoneNumber) {
+      setPhoneNumber(p.replace(/\D/g, '').slice(0, 10));
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-detect existing citizen session — skip OTP if already verified
+  useEffect(() => {
+    const citizenToken = localStorage.getItem('citizenToken');
+    if (citizenToken && !phoneVerified) {
+      const API = import.meta.env.VITE_API_URL || '/api';
+      fetch(`${API}/citizen/profile`, {
+        headers: { Authorization: `Bearer ${citizenToken}` },
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.data?.phoneNumber) {
+            const ph = data.data.phoneNumber.replace(/\D/g, '').slice(-10);
+            setPhoneNumber(ph);
+            setPhoneVerified(true);
+            setCurrentStep(1);
+          }
+        })
+        .catch(() => { /* token invalid — user will verify manually */ });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Form data
   const [image, setImage] = useState(null);
@@ -682,8 +979,9 @@ function SubmitComplaintContent() {
   const [aiError, setAiError] = useState(null);
   const [isCategoryManuallySet, setIsCategoryManuallySet] = useState(false); // Track manual override
 
-  // 4-step config
+  // 5-step config
   const steps = [
+    { id: 'verify',  label: t('step_verify',  'Verify'),      description: t('phone_verify', 'Phone') },
     { id: 'photo',   label: t('step_photo',   'Photo'),       description: t('upload', 'Upload') },
     { id: 'ai',      label: t('step_ai',      'AI Analysis'), description: t('auto_classify', 'Auto-classify') },
     { id: 'details', label: t('step_details', 'Details'),     description: t('location_info', 'Location & Info') },
@@ -725,19 +1023,20 @@ function SubmitComplaintContent() {
   // ── Validation
   const canProceed = useCallback(() => {
     switch (currentStep) {
-      case 0: return !!image;
-      case 1: {
+      case 0: return phoneVerified;
+      case 1: return !!image;
+      case 2: {
         // Block if AI predicted "Other" and user hasn't manually changed it
         if (aiCategory === 'Other' && !isCategoryManuallySet) {
           return false;
         }
         return !!aiCategory;
       }
-      case 2: return !!(location?.latitude && location?.longitude);
-      case 3: return true;
+      case 3: return !!(location?.latitude && location?.longitude) && description.trim().length > 0;
+      case 4: return true;
       default: return false;
     }
-  }, [currentStep, image, aiCategory, location, isCategoryManuallySet]);
+  }, [currentStep, image, aiCategory, location, isCategoryManuallySet, phoneVerified, description]);
 
   // ── AI runner
   const runClassification = useCallback(async () => {
@@ -762,21 +1061,21 @@ function SubmitComplaintContent() {
 
   // ── Navigation
   const goNext = async () => {
-    if (currentStep === 0) {
+    if (currentStep === 1) {
       // Trigger AI immediately when moving from photo step
-      setCurrentStep(1);
+      setCurrentStep(2);
       await runClassification();
       return;
     }
-    if (currentStep === 2) {
+    if (currentStep === 3) {
       await checkDuplicates();
       return;
     }
-    setCurrentStep(prev => Math.min(prev + 1, 3));
+    setCurrentStep(prev => Math.min(prev + 1, 4));
   };
 
   const goBack = () => {
-    if (currentStep === 1) {
+    if (currentStep === 2) {
       setAiCategory('');
       setAiConfidence(null);
       setAiError(null);
@@ -787,7 +1086,7 @@ function SubmitComplaintContent() {
 
   const goToStep = (step) => {
     if (step >= currentStep) return;
-    if (step < 1) { 
+    if (step < 2) { 
       setAiCategory(''); 
       setAiConfidence(null); 
       setAiError(null);
@@ -799,7 +1098,7 @@ function SubmitComplaintContent() {
   // ── Duplicate check
   const checkDuplicates = async () => {
     if (!location?.latitude || !location?.longitude || !aiCategory) {
-      setCurrentStep(3);
+      setCurrentStep(4);
       return;
     }
     try {
@@ -810,10 +1109,10 @@ function SubmitComplaintContent() {
         setDuplicates(result.duplicates);
         setShowDuplicateModal(true);
       } else {
-        setCurrentStep(3);
+        setCurrentStep(4);
       }
     } catch {
-      setCurrentStep(3);
+      setCurrentStep(4);
     }
   };
 
@@ -833,6 +1132,7 @@ function SubmitComplaintContent() {
       formData.append('image', blob, 'complaint-image.jpg');
       formData.append('category', aiCategory);
       formData.append('description', description || '');
+      formData.append('phoneNumber', phoneNumber);
       formData.append('latitude', location.latitude.toString());
       formData.append('longitude', location.longitude.toString());
       formData.append('address', location.address || '');
@@ -845,18 +1145,20 @@ function SubmitComplaintContent() {
       const result = await complaintApi.create(formData);
       setSubmitProgress(90);
 
-      if (result.success) {
+        if (result.success) {
         await clearDraftComplaint();
         setSubmittedComplaintId(result.data.complaintId);
+        setEstimatedResolution(result.data.estimatedResolution);
         setSubmitProgress(100);
         addToast(t('complaint_submitted_toast', 'Complaint submitted!'), 'success');
       } else if (result.isDuplicate) {
-        setDuplicates(result.duplicates || []);
-        setShowDuplicateModal(true);
-        setSubmitProgress(0);
-      } else {
-        throw new Error(result.message || 'Submission failed');
-      }
+          setDuplicates(result.duplicates || []);
+          setShowDuplicateModal(true);
+          setSubmitProgress(0);
+          setCurrentStep(4); // Go back to preview
+        } else {
+          throw new Error(result.message || 'Submission failed');
+        }
     } catch (err) {
       console.error('Submit error:', err);
       const msg = !isOnline
@@ -883,13 +1185,13 @@ function SubmitComplaintContent() {
         <ComplaintSuccess
           complaintId={submittedComplaintId}
           trackingUrl={`${window.location.origin}/track/${submittedComplaintId}`}
-          estimatedTime={t('estimated_3_5_days', '3–5 working days')}
+          estimatedTime={estimatedResolution || t('estimated_3_5_days', '3–5 working days')}
           onTrackStatus={() => navigate(`/track/${submittedComplaintId}`)}
           onNewComplaint={() => {
             setSubmittedComplaintId(null);
             setImage(null); setImageBlob(null); setLocation(null);
             setAiCategory(''); setAiConfidence(null); setAiError(null);
-            setDescription(''); setCurrentStep(0);
+            setDescription(''); setCurrentStep(1);
           }}
         />
       </div>
@@ -930,7 +1232,7 @@ function SubmitComplaintContent() {
             <h1 className="font-semibold text-gray-900">{t('new_complaint', 'New Complaint')}</h1>
           </div>
           <div className="flex items-center gap-3">
-            <StatusIndicators showGPS={currentStep === 2} />
+            <StatusIndicators showGPS={currentStep === 3} />
             <LanguageSelector compact />
           </div>
         </div>
@@ -955,6 +1257,17 @@ function SubmitComplaintContent() {
               transition={{ duration: 0.2 }}
             >
               {currentStep === 0 && (
+                <PhoneVerifyStep
+                  phoneNumber={phoneNumber}
+                  setPhoneNumber={setPhoneNumber}
+                  onVerified={(phone) => {
+                    setPhoneNumber(phone);
+                    setPhoneVerified(true);
+                    setCurrentStep(1);
+                  }}
+                />
+              )}
+              {currentStep === 1 && (
                 <PhotoUploadStep
                   image={image}
                   onCapture={handleCapture}
@@ -962,7 +1275,7 @@ function SubmitComplaintContent() {
                   onRetake={handleRetake}
                 />
               )}
-              {currentStep === 1 && (
+              {currentStep === 2 && (
                 <AIClassificationStep
                   image={image}
                   isClassifying={isClassifying}
@@ -978,7 +1291,7 @@ function SubmitComplaintContent() {
                   isCategoryManuallySet={isCategoryManuallySet}
                 />
               )}
-              {currentStep === 2 && (
+              {currentStep === 3 && (
                 <LocationDetailsStep
                   location={location}
                   description={description}
@@ -986,7 +1299,7 @@ function SubmitComplaintContent() {
                   onDescriptionChange={setDescription}
                 />
               )}
-              {currentStep === 3 && (
+              {currentStep === 4 && (
                 <PreviewStep
                   data={{
                     image, location, category: aiCategory,
@@ -1005,8 +1318,10 @@ function SubmitComplaintContent() {
       <footer className="bg-white border-t border-gray-200 px-4 py-4 safe-area-bottom">
         <div className="max-w-lg mx-auto space-y-2">
 
-          {/* Step 0: Analyse with AI */}
-          {currentStep === 0 && (
+          {/* Step 0: Phone verify — handled entirely by the component */}
+
+          {/* Step 1: Analyse with AI */}
+          {currentStep === 1 && (
             <button
               onClick={goNext}
               disabled={!canProceed()}
@@ -1020,10 +1335,10 @@ function SubmitComplaintContent() {
             </button>
           )}
 
-          {/* Step 1: Continue after AI - Only if not "Other" or manually changed */}
-          {currentStep === 1 && !isClassifying && aiCategory && (
+          {/* Step 2: Continue after AI - Only if not "Other" or manually changed */}
+          {currentStep === 2 && !isClassifying && aiCategory && (
             <button
-              onClick={() => setCurrentStep(2)}
+              onClick={() => setCurrentStep(3)}
               disabled={!canProceed()}
               className={`w-full py-4 rounded-xl font-medium flex items-center justify-center gap-2 transition
                 ${canProceed()
@@ -1035,8 +1350,8 @@ function SubmitComplaintContent() {
             </button>
           )}
 
-          {/* Step 2: Continue to preview */}
-          {currentStep === 2 && (
+          {/* Step 3: Continue to preview */}
+          {currentStep === 3 && (
             <button
               onClick={goNext}
               disabled={!canProceed()}
@@ -1050,8 +1365,8 @@ function SubmitComplaintContent() {
             </button>
           )}
 
-          {/* Step 3: Submit */}
-          {currentStep === 3 && (
+          {/* Step 4: Submit */}
+          {currentStep === 4 && (
             <button
               onClick={() => handleSubmit()}
               disabled={isSubmitting || !isOnline}

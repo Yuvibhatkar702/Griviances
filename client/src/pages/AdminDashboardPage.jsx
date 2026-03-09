@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
@@ -30,9 +30,8 @@ const markerIcons = {
   pending: createMarkerIcon('orange'),
   assigned: createMarkerIcon('blue'),
   in_progress: createMarkerIcon('yellow'),
-  resolved: createMarkerIcon('green'),
+  closed: createMarkerIcon('green'),
   rejected: createMarkerIcon('red'),
-  closed: createMarkerIcon('grey'),
 };
 
 // Map bounds updater component
@@ -64,13 +63,6 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [mapComplaints, setMapComplaints] = useState([]);
-  const [filters, setFilters] = useState({
-    status: '',
-    category: '',
-    priority: '',
-    startDate: '',
-    endDate: '',
-  });
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -84,9 +76,26 @@ export default function AdminDashboardPage() {
   // Check auth
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/admin/login');
+      navigate('/official-login');
     }
   }, [isAuthenticated, navigate]);
+
+  // Verify session on mount to handle token expiry
+  useEffect(() => {
+    const verifySession = async () => {
+      if (!isAuthenticated) return;
+      try {
+        await adminApi.getProfile();
+      } catch (error) {
+        if (error.response?.status === 401) {
+          console.warn('Admin session expired. Logging out...');
+          logout();
+          navigate('/official-login');
+        }
+      }
+    };
+    verifySession();
+  }, [isAuthenticated, logout, navigate]);
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
@@ -107,7 +116,6 @@ export default function AdminDashboardPage() {
       const params = {
         page: pagination.page,
         limit: pagination.limit,
-        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== '')),
       };
       
       const result = await adminApi.getComplaints(params);
@@ -125,23 +133,19 @@ export default function AdminDashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [pagination.page, pagination.limit, filters, addToast]);
+  }, [pagination.page, pagination.limit, addToast]);
 
   // Fetch map data
   const fetchMapData = useCallback(async () => {
     try {
-      const params = {
-        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== '')),
-      };
-      
-      const result = await adminApi.getMapData(params);
+      const result = await adminApi.getMapData();
       if (result.success) {
         setMapComplaints(result.data.complaints);
       }
     } catch (error) {
       console.error('Error fetching map data:', error);
     }
-  }, [filters]);
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -161,26 +165,10 @@ export default function AdminDashboardPage() {
     }
   }, [isAuthenticated, view, fetchMapData]);
 
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
   const handleLogout = () => {
     logout();
-    navigate('/admin/login');
+    navigate('/official-login');
   };
-
-  const categories = [
-    'roads', 'water', 'electricity', 'sanitation', 'public_safety',
-    'environment', 'transportation', 'healthcare', 'education', 'other'
-  ];
-
-  const statuses = [
-    'pending', 'assigned', 'in_progress', 'resolved', 'rejected', 'closed'
-  ];
-
-  const priorities = ['low', 'medium', 'high', 'critical'];
 
   if (!isAuthenticated) {
     return null;
@@ -222,7 +210,7 @@ export default function AdminDashboardPage() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats Cards */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
             <div className="card p-4">
               <p className="text-2xl font-bold text-gray-900">{stats.total || 0}</p>
               <p className="text-sm text-gray-600">Total</p>
@@ -232,16 +220,24 @@ export default function AdminDashboardPage() {
               <p className="text-sm text-gray-600">Pending</p>
             </div>
             <div className="card p-4">
+              <p className="text-2xl font-bold text-indigo-600">{stats.byStatus?.assigned || 0}</p>
+              <p className="text-sm text-gray-600">Assigned</p>
+            </div>
+            <div className="card p-4">
               <p className="text-2xl font-bold text-blue-600">{stats.byStatus?.in_progress || 0}</p>
               <p className="text-sm text-gray-600">In Progress</p>
             </div>
             <div className="card p-4">
-              <p className="text-2xl font-bold text-green-600">{stats.byStatus?.resolved || 0}</p>
-              <p className="text-sm text-gray-600">Resolved</p>
+              <p className="text-2xl font-bold text-green-600">{stats.byStatus?.closed || 0}</p>
+              <p className="text-sm text-gray-600">Closed</p>
             </div>
             <div className="card p-4">
               <p className="text-2xl font-bold text-red-600">{stats.byStatus?.rejected || 0}</p>
               <p className="text-sm text-gray-600">Rejected</p>
+            </div>
+            <div className="card p-4">
+              <p className="text-2xl font-bold text-orange-600">{stats.overdueCount || 0}</p>
+              <p className="text-sm text-gray-600">Overdue</p>
             </div>
             <div className="card p-4">
               <p className="text-2xl font-bold text-primary-600">
@@ -252,84 +248,29 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* View Toggle & Filters */}
+        {/* View Toggle */}
         <div className="card mb-6">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-            {/* View Toggle */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setView('list')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  view === 'list'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                📋 List View
-              </button>
-              <button
-                onClick={() => setView('map')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  view === 'map'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                🗺️ Map View
-              </button>
-            </div>
-
-            {/* Filters */}
-            <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-3">
-              <select
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="text-sm"
-              >
-                <option value="">All Status</option>
-                {statuses.map(s => (
-                  <option key={s} value={s}>{t(`status.${s}`)}</option>
-                ))}
-              </select>
-
-              <select
-                value={filters.category}
-                onChange={(e) => handleFilterChange('category', e.target.value)}
-                className="text-sm"
-              >
-                <option value="">All Categories</option>
-                {categories.map(c => (
-                  <option key={c} value={c}>{t(`categories.${c}`)}</option>
-                ))}
-              </select>
-
-              <select
-                value={filters.priority}
-                onChange={(e) => handleFilterChange('priority', e.target.value)}
-                className="text-sm"
-              >
-                <option value="">All Priority</option>
-                {priorities.map(p => (
-                  <option key={p} value={p} className="capitalize">{p}</option>
-                ))}
-              </select>
-
-              <input
-                type="date"
-                value={filters.startDate}
-                onChange={(e) => handleFilterChange('startDate', e.target.value)}
-                className="text-sm"
-                placeholder="Start Date"
-              />
-
-              <input
-                type="date"
-                value={filters.endDate}
-                onChange={(e) => handleFilterChange('endDate', e.target.value)}
-                className="text-sm"
-                placeholder="End Date"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setView('list')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                view === 'list'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              📋 List View
+            </button>
+            <button
+              onClick={() => setView('map')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                view === 'map'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              🗺️ Map View
+            </button>
           </div>
         </div>
 
@@ -372,7 +313,7 @@ export default function AdminDashboardPage() {
                             {complaint.complaintId}
                           </td>
                           <td className="px-4 py-3 text-sm">
-                            {t(`categories.${complaint.category}`)}
+                            {complaint.category}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
                             {complaint.description}
@@ -475,7 +416,7 @@ export default function AdminDashboardPage() {
                             {complaint.complaintId}
                           </p>
                           <p className="font-medium text-sm mb-1">
-                            {t(`categories.${complaint.category}`)}
+                            {complaint.category}
                           </p>
                           <p className="text-xs text-gray-600 mb-2 line-clamp-2">
                             {complaint.description}
@@ -503,7 +444,7 @@ export default function AdminDashboardPage() {
                   {Object.entries({
                     pending: ['🟠', 'Pending'],
                     in_progress: ['🟡', 'In Progress'],
-                    resolved: ['🟢', 'Resolved'],
+                    closed: ['🟢', 'Closed'],
                     rejected: ['🔴', 'Rejected'],
                   }).map(([key, [icon, label]]) => (
                     <div key={key} className="flex items-center gap-2 text-xs">

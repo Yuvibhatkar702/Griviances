@@ -32,7 +32,7 @@ const adminSchema = new mongoose.Schema({
   // Role & Permissions
   role: {
     type: String,
-    enum: ['super_admin', 'admin', 'moderator', 'viewer'],
+    enum: ['super_admin', 'admin', 'moderator', 'viewer', 'department_head', 'officer'],
     default: 'moderator',
   },
   
@@ -46,18 +46,38 @@ const adminSchema = new mongoose.Schema({
     canExportData: { type: Boolean, default: false },
   },
   
-  // Department/Area Assignment
+  // Department/Area Assignment (free-form — matches Department.code)
   department: {
     type: String,
-    enum: [
-      'roads',
-      'electricity',
-      'water',
-      'sanitation',
-      'general',
-      'all'
-    ],
+    trim: true,
+    lowercase: true,
     default: 'general',
+  },
+
+  // Reference to Department collection (for department_head / officer)
+  departmentRef: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+  },
+
+  // Department code string (matches Department.code)
+  departmentCode: {
+    type: String,
+    trim: true,
+    lowercase: true,
+  },
+
+  // Designation (e.g. Executive Engineer, Sanitary Inspector)
+  designation: {
+    type: String,
+    trim: true,
+  },
+
+  // Employee ID (optional, for HR tracking)
+  employeeId: {
+    type: String,
+    trim: true,
+    default: '',
   },
   
   // Assigned area (optional, for area-based filtering)

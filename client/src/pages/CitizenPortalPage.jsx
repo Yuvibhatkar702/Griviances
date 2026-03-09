@@ -1,15 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+const ACTIVITY_EVENTS = ['mousemove', 'click', 'keydown', 'scroll', 'touchstart'];
 
 export default function CitizenPortalPage() {
   const { t } = useTranslation();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [citizenData, setCitizenData] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('citizenToken'));
+  const [token, setToken] = useState(null);
   
   // Login state
   const [step, setStep] = useState('phone'); // phone, otp
@@ -24,9 +26,53 @@ export default function CitizenPortalPage() {
   const [stats, setStats] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
 
+  // Restore citizen session from localStorage on mount
   useEffect(() => {
-    if (token) {
-      fetchProfile();
+    const savedToken = localStorage.getItem('citizenToken');
+    if (savedToken && !token) {
+      setToken(savedToken);
+      localStorage.setItem('citizenSession', Date.now().toString());
+    }
+  }, []);
+
+  // ── Citizen session activity tracking & auto-logout ───────────────
+  const touchCitizenSession = useCallback(() => {
+    if (!token) return;
+    localStorage.setItem('citizenSession', Date.now().toString());
+  }, [token]);
+
+  // Activity listeners
+  useEffect(() => {
+    if (!token) return;
+    const handler = () => touchCitizenSession();
+    ACTIVITY_EVENTS.forEach((evt) => window.addEventListener(evt, handler, { passive: true }));
+    return () => ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, handler));
+  }, [token, touchCitizenSession]);
+
+  // 30-second interval check for session expiry
+  useEffect(() => {
+    if (!token) return;
+    const id = setInterval(() => {
+      const lastActive = parseInt(localStorage.getItem('citizenSession') || '0', 10);
+      if (lastActive > 0 && Date.now() - lastActive > SESSION_TIMEOUT) {
+        clearInterval(id);
+        // Inline logout to avoid stale closure
+        localStorage.removeItem('citizenToken');
+        localStorage.removeItem('citizenSession');
+        setToken(null);
+        setIsLoggedIn(false);
+        setCitizenData(null);
+        setComplaints([]);
+        setStats(null);
+        setStep('phone');
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [token]);
+
+  useEffect(() => {
+    if (token && !isLoggedIn) {
+      fetchProfile(token);
     }
   }, [token]);
 
@@ -37,10 +83,11 @@ export default function CitizenPortalPage() {
     }
   }, [countdown]);
 
-  const fetchProfile = async () => {
+  const fetchProfile = async (authToken) => {
+    const t = authToken || token;
     try {
       const response = await fetch(`${API_BASE}/citizen/profile`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${t}` },
       });
       const data = await response.json();
       
@@ -48,7 +95,7 @@ export default function CitizenPortalPage() {
         setCitizenData(data.data);
         setStats(data.data.stats);
         setIsLoggedIn(true);
-        fetchComplaints();
+        fetchComplaints('' , t);
       } else {
         handleLogout();
       }
@@ -58,13 +105,14 @@ export default function CitizenPortalPage() {
     }
   };
 
-  const fetchComplaints = async (status = '') => {
+  const fetchComplaints = async (status = '', authToken) => {
+    const t = authToken || token;
     try {
       const params = new URLSearchParams({ limit: 50 });
       if (status) params.append('status', status);
       
       const response = await fetch(`${API_BASE}/citizen/complaints?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${t}` },
       });
       const data = await response.json();
       
@@ -92,9 +140,26 @@ export default function CitizenPortalPage() {
       if (data.success) {
         setStep('otp');
         setCountdown(60);
-        // In dev mode, auto-fill OTP if returned
+        // In dev mode, auto-fill OTP and auto-verify
         if (data.otp) {
           setOtp(data.otp);
+          // Auto-verify after a short delay
+          setTimeout(async () => {
+            try {
+              const verifyRes = await fetch(`${API_BASE}/citizen/verify-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phoneNumber, otp: data.otp }),
+              });
+              const verifyData = await verifyRes.json();
+              if (verifyData.success) {
+                localStorage.setItem('citizenToken', verifyData.data.token);
+                localStorage.setItem('citizenSession', Date.now().toString());
+                setToken(verifyData.data.token);
+                setLoading(false);
+              }
+            } catch (_) { /* fallback to manual entry */ }
+          }, 1000);
         }
       } else {
         setError(data.message || 'Failed to send OTP');
@@ -121,10 +186,8 @@ export default function CitizenPortalPage() {
 
       if (data.success) {
         localStorage.setItem('citizenToken', data.data.token);
+        localStorage.setItem('citizenSession', Date.now().toString());
         setToken(data.data.token);
-        setCitizenData(data.data.citizen);
-        setIsLoggedIn(true);
-        fetchComplaints();
       } else {
         setError(data.message || 'Invalid OTP');
       }
@@ -146,6 +209,7 @@ export default function CitizenPortalPage() {
     }
     
     localStorage.removeItem('citizenToken');
+    localStorage.removeItem('citizenSession');
     setToken(null);
     setIsLoggedIn(false);
     setCitizenData(null);
@@ -180,7 +244,7 @@ export default function CitizenPortalPage() {
     const colors = {
       pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
       in_progress: 'bg-blue-100 text-blue-700 border-blue-200',
-      resolved: 'bg-green-100 text-green-700 border-green-200',
+      closed: 'bg-green-100 text-green-700 border-green-200',
       rejected: 'bg-red-100 text-red-700 border-red-200',
     };
     return colors[status] || 'bg-gray-100 text-gray-700 border-gray-200';
@@ -353,12 +417,12 @@ export default function CitizenPortalPage() {
           <StatCard label="Total" value={stats?.total || 0} icon="📋" color="blue" />
           <StatCard label="Pending" value={stats?.pending || 0} icon="⏳" color="yellow" />
           <StatCard label="In Progress" value={stats?.inProgress || 0} icon="🔄" color="blue" />
-          <StatCard label="Resolved" value={stats?.resolved || 0} icon="✅" color="green" />
+          <StatCard label="Closed" value={stats?.closed || 0} icon="✅" color="green" />
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {['all', 'pending', 'in_progress', 'resolved', 'rejected'].map((tab) => (
+          {['all', 'pending', 'in_progress', 'closed', 'rejected'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -368,7 +432,7 @@ export default function CitizenPortalPage() {
                   : 'bg-white text-gray-600 hover:bg-gray-100'
               }`}
             >
-              {tab === 'all' ? 'All' : t(`status.${tab}`)}
+              {tab === 'all' ? 'All' : tab.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
             </button>
           ))}
         </div>
@@ -440,6 +504,45 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-IN';
+
+      recognitionRef.current.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript + ' ';
+        }
+        setComment((prev) => (prev + ' ' + transcript).trim());
+      };
+
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
+    }
+    return () => {
+      if (recognitionRef.current) recognitionRef.current.abort();
+    };
+  }, []);
+
+  const toggleVoice = () => {
+    if (!recognitionRef.current) return;
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -450,6 +553,9 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
     }
   };
 
+  const rawPath = complaint.image?.filePath || '';
+  const imgSrc = rawPath ? `/${rawPath.replace(/\\/g, '/')}` : null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -457,29 +563,51 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
       className="bg-white rounded-xl shadow-sm border overflow-hidden"
     >
       <div className="p-5">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h3 className="font-semibold text-gray-900">
-              {t(`categories.${complaint.category}`)}
-            </h3>
-            <p className="text-sm text-gray-500">
-              {complaint.complaintId} • {new Date(complaint.createdAt).toLocaleDateString()}
-            </p>
+        {/* Header row: ID + Status + Date/Time + Track link */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm font-bold text-gray-900">{complaint.complaintId}</span>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(complaint.status)}`}>
+              {complaint.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+            </span>
           </div>
-          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(complaint.status)}`}>
-            {t(`status.${complaint.status}`)}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400">
+              {new Date(complaint.createdAt).toLocaleDateString()} {new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <Link
+              to={`/track/${complaint.complaintId}`}
+              className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition font-medium"
+            >
+              Track Complaint
+            </Link>
+          </div>
         </div>
 
-        {complaint.description && (
-          <p className="text-gray-600 text-sm mb-3">{complaint.description}</p>
-        )}
-
-        {complaint.address?.fullAddress && (
-          <p className="text-gray-500 text-xs flex items-center gap-1">
-            <span>📍</span> {complaint.address.fullAddress}
-          </p>
-        )}
+        {/* Content: Image + Details */}
+        <div className="flex gap-4">
+          {imgSrc ? (
+            <img
+              src={imgSrc}
+              alt="Complaint"
+              className="w-24 h-24 rounded-lg object-cover cursor-pointer border flex-shrink-0 hover:opacity-80 transition"
+              onClick={() => setImagePreview(imgSrc)}
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+          ) : (
+            <div className="w-24 h-24 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center text-gray-300 text-xs border">No image</div>
+          )}
+          <div className="flex-1 min-w-0 space-y-1">
+            <p className="text-sm text-gray-800"><span className="font-semibold">Category:</span> {complaint.category}</p>
+            <p className="text-sm text-gray-800"><span className="font-semibold">Status:</span> {complaint.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>
+            {complaint.description && (
+              <p className="text-sm text-gray-600"><span className="font-semibold text-gray-800">Description:</span> {complaint.description}</p>
+            )}
+            {complaint.address?.fullAddress && (
+              <p className="text-sm text-gray-500"><span className="font-semibold text-gray-700">Address:</span> {complaint.address.fullAddress}</p>
+            )}
+          </div>
+        </div>
 
         {/* Status Timeline */}
         {complaint.statusHistory && complaint.statusHistory.length > 1 && (
@@ -489,11 +617,11 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
               {complaint.statusHistory.slice(-3).reverse().map((history, index) => (
                 <div key={index} className="flex items-center gap-2 text-xs">
                   <span className={`w-2 h-2 rounded-full ${
-                    history.status === 'resolved' ? 'bg-green-500' :
+                    history.status === 'closed' ? 'bg-green-500' :
                     history.status === 'in_progress' ? 'bg-blue-500' :
                     'bg-yellow-500'
                   }`} />
-                  <span className="text-gray-600">{t(`status.${history.status}`)}</span>
+                  <span className="text-gray-600">{history.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
                   <span className="text-gray-400">
                     {new Date(history.changedAt).toLocaleString()}
                   </span>
@@ -504,7 +632,7 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
         )}
 
         {/* Feedback Section */}
-        {complaint.status === 'resolved' && !complaint.feedback?.rating && (
+        {complaint.status === 'closed' && !complaint.feedback?.rating && (
           <div className="mt-4 pt-4 border-t">
             {!showFeedback ? (
               <button
@@ -527,13 +655,30 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
                     </button>
                   ))}
                 </div>
-                <textarea
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Share your feedback (optional)"
-                  className="w-full px-3 py-2 border rounded-lg text-sm"
-                  rows={2}
-                />
+                <div className="relative">
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="Share your feedback (optional)"
+                    className="w-full px-3 py-2 pr-12 border rounded-lg text-sm"
+                    rows={2}
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleVoice}
+                    className={`absolute right-2 top-2 p-1.5 rounded-full transition-colors ${
+                      isListening
+                        ? 'bg-red-100 text-red-600 animate-pulse'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    title={isListening ? 'Stop recording' : 'Start voice input'}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  </button>
+                </div>
+                {isListening && <p className="text-xs text-red-500">🎤 Listening...</p>}
                 <div className="flex gap-2">
                   <button
                     onClick={handleSubmit}
@@ -577,17 +722,12 @@ function ComplaintCard({ complaint, onFeedback, t, getStatusColor }) {
         )}
       </div>
 
-      <div className="bg-gray-50 px-5 py-3 flex justify-between items-center">
-        <Link
-          to={`/track?id=${complaint.complaintId}`}
-          className="text-primary-600 text-sm font-medium hover:underline"
-        >
-          View Details
-        </Link>
-        {complaint.upvoteCount > 0 && (
-          <span className="text-sm text-gray-500">👍 {complaint.upvoteCount} supporters</span>
-        )}
-      </div>
+      {/* Image Preview Modal */}
+      {imagePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setImagePreview(null)}>
+          <img src={imagePreview} alt="Preview" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl" />
+        </div>
+      )}
     </motion.div>
   );
 }

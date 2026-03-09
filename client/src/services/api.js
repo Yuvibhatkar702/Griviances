@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useAuthStore } from '../store';
+import { useAuthStore, useOfficialStore } from '../store';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -12,12 +12,27 @@ const api = axios.create({
 });
 
 // Request interceptor to add auth token
+// Checks both the admin store and the official store so officer/dept-head
+// API calls automatically include the right bearer token.
 api.interceptors.request.use(
   (config) => {
-    const token = useAuthStore.getState().token;
+    // If the caller already set an Authorization header (e.g. citizen API), keep it
+    if (config.headers.Authorization) return config;
+
+    // Prefer official store token (dept-head / officer), fall back to admin store
+    const officialToken = useOfficialStore.getState().token;
+    const adminToken = useAuthStore.getState().token;
+    const token = officialToken || adminToken;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Mark activity on every outgoing API call
+    const keys = ['adminSession', 'officerSession'];
+    keys.forEach((k) => {
+      if (localStorage.getItem(k)) localStorage.setItem(k, Date.now().toString());
+    });
+
     return config;
   },
   (error) => {
@@ -25,14 +40,44 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor to handle errors
+// Response interceptor:
+// 1. Capture x-refresh-token header (sliding session) and update correct store
+// 2. Handle 401 to auto-logout stale sessions
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // ── Sliding session: pick up the refreshed JWT ──────────────────
+    const freshToken = response.headers['x-refresh-token'];
+    if (freshToken) {
+      // Determine which store owns the token that was sent
+      const officialToken = useOfficialStore.getState().token;
+      const adminToken = useAuthStore.getState().token;
+
+      if (officialToken && response.config?.headers?.Authorization?.includes(officialToken)) {
+        useOfficialStore.getState().login(useOfficialStore.getState().official, freshToken);
+      } else if (adminToken && response.config?.headers?.Authorization?.includes(adminToken)) {
+        useAuthStore.getState().login(useAuthStore.getState().admin, freshToken);
+      }
+    }
+
+    return response;
+  },
   (error) => {
+    // On 401 (Unauthorized), the JWT might have expired or become invalid
+    // Clear both stores to force re-login
     if (error.response?.status === 401) {
-      // Token expired or invalid
-      useAuthStore.getState().logout();
-      window.location.href = '/admin/login';
+      const message = error.response?.data?.message || '';
+      // Only auto-clear if it's a token issue (not just wrong password on login)
+      if (message.includes('expired') || message.includes('Invalid token') || message.includes('Access denied') || message.includes('mismatch')) {
+        console.warn('Session expired or invalid token - clearing auth stores');
+        // Don't clear during login attempts
+        const url = error.config?.url || '';
+        if (!url.includes('/login')) {
+          useAuthStore.getState().logout();
+          useOfficialStore.getState().logout();
+          localStorage.removeItem('adminSession');
+          localStorage.removeItem('officerSession');
+        }
+      }
     }
     return Promise.reject(error);
   }
@@ -85,6 +130,41 @@ export const complaintApi = {
   getStatus: async (complaintId, phone) => {
     const response = await api.get(`/complaints/status/${complaintId}`, {
       params: phone ? { phone } : {},
+    });
+    return response.data;
+  },
+
+  // Send OTP for mobile-number tracking (public)
+  trackSendOTP: async (phoneNumber) => {
+    const response = await api.post('/complaints/track/send-otp', { phoneNumber });
+    return response.data;
+  },
+
+  // Verify OTP and get complaints by mobile number (public)
+  trackVerifyOTP: async (phoneNumber, otp) => {
+    const response = await api.post('/complaints/track/verify-otp', { phoneNumber, otp });
+    return response.data;
+  },
+
+  // Reopen a closed complaint (public)
+  reopenComplaint: async (complaintId, reason, phone, imageFile) => {
+    const formData = new FormData();
+    formData.append('reason', reason);
+    if (phone) formData.append('phone', phone);
+    if (imageFile) formData.append('reopenImage', imageFile);
+    
+    const response = await api.post(`/complaints/status/${complaintId}/reopen`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  // Rate the officer after resolution (public)
+  rateOfficer: async (complaintId, rating, comment, phone) => {
+    const response = await api.post(`/complaints/status/${complaintId}/rate`, {
+      rating,
+      comment: comment || '',
+      phone: phone || undefined,
     });
     return response.data;
   },
@@ -237,41 +317,6 @@ export const adminApi = {
   },
 };
 
-// Community APIs
-export const communityApi = {
-  // Get community feed
-  getFeed: async (params = {}) => {
-    const response = await api.get('/community/feed', { params });
-    return response.data;
-  },
-
-  // Get trending complaints
-  getTrending: async () => {
-    const response = await api.get('/community/trending/list');
-    return response.data;
-  },
-
-  // Get community stats
-  getStats: async () => {
-    const response = await api.get('/community/stats/summary');
-    return response.data;
-  },
-
-  // Get single complaint details
-  getComplaint: async (complaintId) => {
-    const response = await api.get(`/community/${complaintId}`);
-    return response.data;
-  },
-
-  // Upvote a complaint
-  upvote: async (complaintId, voterPhone = null) => {
-    const response = await api.post(`/community/${complaintId}/upvote`, {
-      voterPhone,
-    });
-    return response.data;
-  },
-};
-
 // Citizen Portal APIs
 export const citizenApi = {
   // Request OTP
@@ -357,6 +402,125 @@ export const analyticsApi = {
   // Get SLA stats
   getSLAStats: async () => {
     const response = await api.get('/complaints/stats');
+    return response.data;
+  },
+};
+
+// ─── Department APIs ────────────────────────────────────────────────
+export const departmentApi = {
+  getAll: async () => {
+    const response = await api.get('/departments');
+    return response.data;
+  },
+  getByCode: async (code) => {
+    const response = await api.get(`/departments/${code}`);
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await api.post('/departments', data);
+    return response.data;
+  },
+  update: async (id, data) => {
+    const response = await api.patch(`/departments/${id}`, data);
+    return response.data;
+  },
+  delete: async (id) => {
+    const response = await api.delete(`/departments/${id}`);
+    return response.data;
+  },
+};
+
+// ─── Official APIs (department heads + officers) ────────────────────
+export const officialApi = {
+  // Official login (email + password)
+  login: async (email, password) => {
+    const response = await api.post('/officials/login', { email, password });
+    return response.data;
+  },
+
+  // Get own profile (verify token validity)
+  getProfile: async () => {
+    const response = await api.get('/officials/profile');
+    return response.data;
+  },
+
+  // Admin: create department head
+  createDepartmentHead: async (data) => {
+    const response = await api.post('/officials/department-heads', data);
+    return response.data;
+  },
+
+  // Admin: create officer
+  createOfficer: async (data) => {
+    const response = await api.post('/officials/officers', data);
+    return response.data;
+  },
+
+  // Admin: get all officials
+  getAllOfficials: async (params = {}) => {
+    const response = await api.get('/officials/all', { params });
+    return response.data;
+  },
+
+  // Department head: get officers in department
+  getDepartmentOfficers: async () => {
+    const response = await api.get('/officials/officers');
+    return response.data;
+  },
+
+  // Department head: get department complaints
+  getDepartmentComplaints: async (params = {}) => {
+    const response = await api.get('/officials/department/complaints', { params });
+    return response.data;
+  },
+
+  // Department head: department stats
+  getDepartmentStats: async () => {
+    const response = await api.get('/officials/department/stats');
+    return response.data;
+  },
+
+  // Department head: assign officer
+  assignOfficer: async (complaintId, officerId) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/assign`, { officerId });
+    return response.data;
+  },
+
+  // Officer: get assigned complaints
+  getOfficerComplaints: async (params = {}) => {
+    const response = await api.get('/officials/officer/complaints', { params });
+    return response.data;
+  },
+
+  // Officer: stats
+  getOfficerStats: async () => {
+    const response = await api.get('/officials/officer/stats');
+    return response.data;
+  },
+
+  // Officer: start work
+  startWork: async (complaintId) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/start`);
+    return response.data;
+  },
+
+  // Officer: resolve
+  resolveComplaint: async (complaintId, formData) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/resolve`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  // Admin: reassign
+  reassignComplaint: async (complaintId, data) => {
+    const response = await api.patch(`/officials/complaints/${complaintId}/reassign`, data);
+    return response.data;
+  },
+
+  // Admin: delete (deactivate) an official
+  deleteOfficial: async (id) => {
+    const response = await api.delete(`/officials/${id}`);
     return response.data;
   },
 };

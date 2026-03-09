@@ -174,3 +174,34 @@ export const useSettingsStore = create(
     }
   )
 );
+
+// Official auth store (department_head / officer)
+export const useOfficialStore = create(
+  persist(
+    (set, get) => ({
+      official: null,
+      token: null,
+      isAuthenticated: false,
+
+      login: (official, token) => {
+        set({ official, token, isAuthenticated: true });
+      },
+
+      logout: () => {
+        set({ official: null, token: null, isAuthenticated: false });
+      },
+
+      getToken: () => get().token,
+      getRole: () => get().official?.role || null,
+      getDepartment: () => get().official?.departmentCode || get().official?.department || null,
+    }),
+    {
+      name: 'grievance-official-auth',
+      partialize: (state) => ({
+        official: state.official,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
+    }
+  )
+);
