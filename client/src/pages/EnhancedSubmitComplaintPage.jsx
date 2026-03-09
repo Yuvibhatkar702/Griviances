@@ -80,7 +80,7 @@ const CATEGORY_META = {
   "Garbage and Trash Issue":   { icon: '🗑️', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Garbage and Trash Issue' },
   "Illegal Drawing on Walls":  { icon: '🎨', color: 'bg-pink-100 text-pink-700 border-pink-200', label: 'Illegal Drawing on Walls' },
   "Street Light Issue":        { icon: '💡', color: 'bg-yellow-100 text-yellow-700 border-yellow-200', label: 'Street Light Issue' },
-  "Photo Invalid":                     { icon: '📋', color: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Other' },
+  "Other":             { icon: '📋', color: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Photo Invalid' },
 };
 
 // Fallback for unknown categories returned by AI

@@ -50,7 +50,7 @@ CATEGORIES = [
 NUM_CLASSES = len(CATEGORIES)
 MODEL_WEIGHTS_PATH = Path(os.getenv("MODEL_WEIGHTS", "weights/classifier.pt"))
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-IMG_SIZE = 224
+IMG_SIZE = 256
 
 # Validation thresholds
 VALIDATION_THRESHOLD = 0.20  # Minimum similarity score for valid municipal images
@@ -250,22 +250,26 @@ def build_classifier_model() -> nn.Module:
     """
 
     # Do not load ImageNet weights when loading trained weights
-    model = models.mobilenet_v3_small(weights=None)
+    model = models.efficientnet_b0(
+        weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1
+    )
 
-    # Get input feature size (576 for MobileNetV3-Small)
-    in_features = model.classifier[0].in_features
+    in_features = model.classifier[1].in_features  # EfficientNet feature size (1280)
 
-    # Replace classifier with the deeper head used in training
     model.classifier = nn.Sequential(
+        nn.Dropout(0.4),
+
         nn.Linear(in_features, 512),
         nn.BatchNorm1d(512),
         nn.ReLU(),
-        nn.Dropout(0.4),
+
+        nn.Dropout(0.3),
 
         nn.Linear(512, 256),
         nn.BatchNorm1d(256),
         nn.ReLU(),
-        nn.Dropout(0.3),
+
+        nn.Dropout(0.2),
 
         nn.Linear(256, NUM_CLASSES)
     )
